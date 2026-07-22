@@ -12,11 +12,7 @@ from qdrant_client.models import (
 
 from . import config
 
-# Qdrant point IDs must be an unsigned int or a UUID -- our chunk_ids are
-# hex strings like "chunk_9f4bae7f2a05", so we derive a deterministic UUID5
-# from the chunk_id. This keeps re-running ingestion idempotent (same
-# chunk_id -> same point id -> upsert overwrites instead of duplicating),
-# which is the same guarantee the old pgvector "ON CONFLICT DO UPDATE" gave.
+
 _ID_NAMESPACE = uuid.UUID("6f2a6f1e-6d1a-4a8e-9d7a-2f9c3b7a1d10")
 
 
@@ -29,10 +25,7 @@ def get_client() -> QdrantClient:
 
 
 def apply_schema(client: QdrantClient) -> None:
-    """Create the collection (if missing) and the payload indexes Phase 4's
-    hybrid retrieval will filter on. Equivalent to schema.sql's CREATE TABLE
-    + CREATE INDEX statements, just via the Qdrant API instead of DDL.
-    """
+  
     existing = {c.name for c in client.get_collections().collections}
     if config.QDRANT_COLLECTION not in existing:
         client.create_collection(
