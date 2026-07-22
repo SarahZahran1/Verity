@@ -1,15 +1,4 @@
-"""
-Phase 3 entry point: collection setup -> embed -> upsert into Qdrant.
 
-Usage:
-    python -m Embedding.run_phase3
-
-Env vars (see config.py for defaults):
-    DOCUMIND_QDRANT_URL         Qdrant endpoint (default http://localhost:6333)
-    DOCUMIND_QDRANT_COLLECTION  collection name
-    DOCUMIND_CHUNKS_PATH        path to chunks_all.jsonl
-    DOCUMIND_EMBED_BATCH_SIZE   embedding batch size
-"""
 from __future__ import annotations
 import time
 
