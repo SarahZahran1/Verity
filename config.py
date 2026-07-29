@@ -16,25 +16,19 @@ EMBEDDINGS_CACHE_PATH = os.environ.get(
 
 # Qdrant
 QDRANT_URL = os.environ.get("DOCUMIND_QDRANT_URL", "http://localhost:6333")
-QDRANT_API_KEY = os.environ.get("DOCUMIND_QDRANT_API_KEY" "")  # None for local Docker
-# Dense-only collection (Phase 3 baseline, kept for eval_retrieval comparisons)
+QDRANT_API_KEY = os.environ.get("DOCUMIND_QDRANT_API_KEY" )  
 QDRANT_COLLECTION_DENSE_ONLY = os.environ.get(
     "DOCUMIND_QDRANT_DENSE_ONLY_COLLECTION", "documind_chunks"
 )
-# Hybrid (dense+sparse) collection -- this is what retrieval actually queries.
 QDRANT_COLLECTION = os.environ.get("DOCUMIND_QDRANT_HYBRID_COLLECTION", "documind_chunks_hybrid")
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "sparse"
 SPARSE_MODEL = os.environ.get("DOCUMIND_SPARSE_MODEL", "Qdrant/bm25")
-
-# Batch sizes -- tuned for a CPU-only dev box; raise EMBED_BATCH_SIZE if you
-# have a GPU available.
 EMBED_BATCH_SIZE = int(os.environ.get("DOCUMIND_EMBED_BATCH_SIZE", "32"))
 QDRANT_UPSERT_BATCH_SIZE = int(os.environ.get("DOCUMIND_QDRANT_UPSERT_BATCH_SIZE", "256"))
 
-# ============================================================================
-# Retrieval (was Retrieval/config.py)
-# ============================================================================
+
+# Retrieval 
 RRF_K = int(os.environ.get("DOCUMIND_RRF_K", "60"))
 PREFETCH_LIMIT = int(os.environ.get("DOCUMIND_PREFETCH_LIMIT", "40"))
 FUSED_TOP_N = int(os.environ.get("DOCUMIND_FUSED_TOP_N", "20"))
@@ -58,40 +52,29 @@ def get_logger(name: str) -> logging.Logger:
     return logger
 
 
-# ============================================================================
-# Generation (was Generation/config.py)
-# ============================================================================
+
+# Generation 
 GENERATION_NUM_CTX = 4096
 THINKING_ENABLED = False
 PARENT_TEXT_MAX_CHARS = 6000
 
-# ---------- OpenRouter ----------
-# SECURITY FIX (necessary deviation from the original file): the original
-# Generation/config.py hardcoded a live OpenRouter API key as the default
-# value of os.environ.get(...). That means anyone with the source (or this
-# refactor) would have had a working, billable API key embedded in plain
-# text. There is no functional reason to keep this pattern -- the key must
-# come from the environment, with a loud failure if it's missing, never a
-# silently-reused embedded secret. Rotate the leaked key mentioned above if
-# it hasn't been already.
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+# OpenRouter 
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 GENERATOR_MODEL = os.environ.get("DOCUMIND_GENERATOR_MODEL", "deepseek/deepseek-chat-v3")
 JUDGE_MODEL = os.environ.get("DOCUMIND_JUDGE_MODEL", "deepseek/deepseek-chat-v3")
-
 GENERATION_TEMPERATURE = 0.1
 JUDGE_TEMPERATURE = 0.0
-
 GENERATION_MAX_TOKENS = 1536
 LLM_TIMEOUT_S = 120
 
-# ---------- Refusal ----------
+# Refusal 
 REFUSAL_RERANK_THRESHOLD = float(os.environ.get("DOCUMIND_REFUSAL_THRESHOLD", "-9.64"))
 
 REFUSAL_MESSAGE = "I don't have information on that in the knowledge base."
 
-# ---------- Scope ----------
+# Scope
 SCOPE_KEYWORDS = {
     "docs": [
         "kubernetes", "k8s", "kubectl", "pod", "node", "namespace",
@@ -121,10 +104,10 @@ OUT_OF_SCOPE_MESSAGE = (
     "(Kubernetes documentation, company policy documents, and support tickets)."
 )
 
-# ---------- Logging ----------
+# Logging
 INFERENCE_LOG_DB_PATH = "data/processed/inference_logs.sqlite3"
 
-# ---------- Evaluation ----------
+# Evaluation 
 GOLD_EVAL_PATH = "data/gold_eval/gold_qa_set.jsonl"
 EVAL_RESULTS_DIR = "data/eval_results"
 
