@@ -1,0 +1,168 @@
+"""
+config.py — single source of truth for every phase (ingestion, embedding,
+retrieval, generation, evaluation).
+
+This replaces three separate config.py files (Embedding/, Retrieval/,
+Generation/) that previously re-exported each other in a daisy chain
+(Retrieval.config imported from Embedding.config, Generation.config
+imported from Retrieval.config). That indirection made sense when each
+phase was a standalone package; once everything lives in one project it
+just adds a layer of chasing imports to find a single constant. All
+values below are unchanged from the original three files unless a
+comment says otherwise.
+"""
+from __future__ import annotations
+
+import logging
+import os
+
+# ============================================================================
+# Embedding model (was Embedding/config.py)
+# ============================================================================
+# bge-base-en-v1.5 chosen after benchmarking against text-embedding-3-small
+# and e5-base-v2 on the gold set. Free, local, no API cost, and strong
+# enough for this single-domain English corpus.
+EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+EMBEDDING_DIM = 768
+
+# BGE is an asymmetric-retrieval model: passages are embedded raw, but
+# queries MUST be prefixed with this instruction string at retrieval time,
+# or recall drops noticeably. Never apply this prefix to chunk/passage text.
+QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
+
+# --- Paths ------------------------------------------------------------------
+CHUNKS_PATH = os.environ.get("DOCUMIND_CHUNKS_PATH", "data/processed/chunks_all.jsonl")
+PARENTS_PATH = os.environ.get("DOCUMIND_PARENTS_PATH", "data/processed/parents_all.jsonl")
+EMBEDDINGS_CACHE_PATH = os.environ.get(
+    "DOCUMIND_EMBEDDINGS_PATH", "data/processed/embeddings_bge_base.npy"
+)
+
+# --- Qdrant -------------------------------------------------------------
+# Chosen over pgvector for this project: no SQL/Postgres background needed,
+# the Python client works with native dicts/filter objects, one-command
+# Docker setup, and built-in sparse+dense hybrid search support.
+QDRANT_URL = os.environ.get("DOCUMIND_QDRANT_URL", "http://localhost:6333")
+QDRANT_API_KEY = os.environ.get("DOCUMIND_QDRANT_API_KEY")  # None for local Docker
+# Dense-only collection (Phase 3 baseline, kept for eval_retrieval comparisons)
+QDRANT_COLLECTION_DENSE_ONLY = os.environ.get(
+    "DOCUMIND_QDRANT_DENSE_ONLY_COLLECTION", "documind_chunks"
+)
+# Hybrid (dense+sparse) collection -- this is what retrieval actually queries.
+QDRANT_COLLECTION = os.environ.get("DOCUMIND_QDRANT_HYBRID_COLLECTION", "documind_chunks_hybrid")
+DENSE_VECTOR_NAME = "dense"
+SPARSE_VECTOR_NAME = "sparse"
+SPARSE_MODEL = os.environ.get("DOCUMIND_SPARSE_MODEL", "Qdrant/bm25")
+
+# Batch sizes -- tuned for a CPU-only dev box; raise EMBED_BATCH_SIZE if you
+# have a GPU available.
+EMBED_BATCH_SIZE = int(os.environ.get("DOCUMIND_EMBED_BATCH_SIZE", "32"))
+QDRANT_UPSERT_BATCH_SIZE = int(os.environ.get("DOCUMIND_QDRANT_UPSERT_BATCH_SIZE", "256"))
+
+# ============================================================================
+# Retrieval (was Retrieval/config.py)
+# ============================================================================
+RRF_K = int(os.environ.get("DOCUMIND_RRF_K", "60"))
+PREFETCH_LIMIT = int(os.environ.get("DOCUMIND_PREFETCH_LIMIT", "40"))
+FUSED_TOP_N = int(os.environ.get("DOCUMIND_FUSED_TOP_N", "20"))
+FINAL_TOP_K = int(os.environ.get("DOCUMIND_FINAL_TOP_K", "5"))
+RERANK_MODEL = os.environ.get("DOCUMIND_RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+LOG_LEVEL = os.environ.get("DOCUMIND_LOG_LEVEL", "INFO")
+ENABLE_TIMING = os.environ.get("DOCUMIND_ENABLE_TIMING", "1") not in ("0", "false", "False")
+
+
+def get_logger(name: str) -> logging.Logger:
+    """Shared logger factory so every module logs at the same level/format
+    instead of each one calling print() with its own prefix."""
+    logger = logging.getLogger(name)
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
+        logger.addHandler(handler)
+    logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    logger.propagate = False
+    return logger
+
+
+# ============================================================================
+# Generation (was Generation/config.py)
+# ============================================================================
+GENERATION_NUM_CTX = 4096
+THINKING_ENABLED = False
+PARENT_TEXT_MAX_CHARS = 6000
+
+# ---------- OpenRouter ----------
+# SECURITY FIX (necessary deviation from the original file): the original
+# Generation/config.py hardcoded a live OpenRouter API key as the default
+# value of os.environ.get(...). That means anyone with the source (or this
+# refactor) would have had a working, billable API key embedded in plain
+# text. There is no functional reason to keep this pattern -- the key must
+# come from the environment, with a loud failure if it's missing, never a
+# silently-reused embedded secret. Rotate the leaked key mentioned above if
+# it hasn't been already.
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+GENERATOR_MODEL = os.environ.get("DOCUMIND_GENERATOR_MODEL", "deepseek/deepseek-chat-v3")
+JUDGE_MODEL = os.environ.get("DOCUMIND_JUDGE_MODEL", "deepseek/deepseek-chat-v3")
+
+GENERATION_TEMPERATURE = 0.1
+JUDGE_TEMPERATURE = 0.0
+
+GENERATION_MAX_TOKENS = 1536
+LLM_TIMEOUT_S = 120
+
+# ---------- Refusal ----------
+REFUSAL_RERANK_THRESHOLD = float(os.environ.get("DOCUMIND_REFUSAL_THRESHOLD", "-9.64"))
+
+REFUSAL_MESSAGE = "I don't have information on that in the knowledge base."
+
+# ---------- Scope ----------
+SCOPE_KEYWORDS = {
+    "docs": [
+        "kubernetes", "k8s", "kubectl", "pod", "node", "namespace",
+        "cluster", "deployment", "container", "helm", "ingress",
+        "service", "kubelet", "cpu manager", "rbac", "secret",
+        "configmap", "volume", "scheduler", "admission",
+        "webhook", "taint", "toleration", "statefulset",
+    ],
+    "policy": [
+        "policy", "pto", "expense", "remote work",
+        "security policy", "code of conduct",
+        "reimbursement", "vacation", "leave",
+        "benefits", "onboarding", "offboarding",
+        "compliance",
+    ],
+    "support": [
+        "ticket", "support", "refund", "account",
+        "billing", "subscription", "login",
+        "password reset", "invoice", "cancel",
+    ],
+}
+
+SCOPE_EMBEDDING_THRESHOLD = 0.25
+
+OUT_OF_SCOPE_MESSAGE = (
+    "That question is outside DocuMind's supported domains "
+    "(Kubernetes documentation, company policy documents, and support tickets)."
+)
+
+# ---------- Logging ----------
+INFERENCE_LOG_DB_PATH = "data/processed/inference_logs.sqlite3"
+
+# ---------- Evaluation ----------
+GOLD_EVAL_PATH = "data/gold_eval/gold_qa_set.jsonl"
+EVAL_RESULTS_DIR = "data/eval_results"
+
+
+def require_openrouter_key() -> str:
+    """Fail loudly and early if OPENROUTER_API_KEY isn't set, instead of
+    letting every downstream request fail with an opaque 401."""
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY is not set. Export it before running any "
+            "generation or evaluation command, e.g.:\n"
+            "  export OPENROUTER_API_KEY=sk-or-v1-...\n"
+            "(The project no longer ships a hardcoded fallback key.)"
+        )
+    return OPENROUTER_API_KEY
