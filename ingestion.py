@@ -1,30 +1,4 @@
-"""
-ingestion.py — all three ingestion tiers (docs / policy / support), the
-shared chunking primitives they depend on, and the run-everything CLI glue.
-
-This merges 7 former files into 1:
-  common.py, shortcode_utils.py, safe_splitter.py, chunk_docs.py,
-  chunk_policy.py, chunk_support.py, ingestion/main.py
-
-Nothing in the chunking LOGIC changed -- this is a relocation, not a
-rewrite. LangChain has no equivalent for any of this (custom recursive
-heading chunker, Hugo shortcode cleaner, code-fence-safe token splitter,
-tier-specific parsers), so it stays plain Python, same as the original.
-The only things that moved are: everything now lives in one module and
-imports go through `config` instead of three separate config.py files.
-
-Module layout (in order):
-  1. Shared primitives   (was common.py)      -- Chunk/ParentSection, tokenizer, I/O
-  2. Shortcode utilities  (was shortcode_utils.py) -- Hugo/K8s markdown dialect
-  3. Safe splitter        (was safe_splitter.py)   -- fenced-code-safe token windows
-  4. Tier 1: docs         (was chunk_docs.py)      -- recursive heading chunker
-  5. Tier 2: policy       (was chunk_policy.py)    -- flat H2 chunker
-  6. Tier 3: support      (was chunk_support.py)   -- one chunk per Q&A pair
-  7. Orchestration        (was ingestion/main.py)  -- run all tiers, merge, validate
-"""
-
 from __future__ import annotations
-
 import hashlib
 import json
 import re
@@ -33,39 +7,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from collections import Counter
 from typing import Optional
-
 import yaml
 from transformers import AutoTokenizer
-
 import config
 
-# ============================================================================
-# 1. Shared primitives (was common.py)
-# ============================================================================
-
-# Tokenizer priority: BAAI/bge-base-en-v1.5's real tokenizer -- this is the
-# embedding model for this project (see config.EMBEDDING_MODEL), and its
-# 512-token hard limit is a real truncation risk, not a soft target.
-# Chunk-size decisions MUST be measured against the tokenizer of the model
-# that will actually embed the text, or a chunk that looks safe under a
-# different tokenizer can silently get truncated by bge at embed time with
-# no error raised.
 _BGE_ENC = AutoTokenizer.from_pretrained(config.EMBEDDING_MODEL)
 
-
 def count_tokens(text: str) -> int:
-    """Token count using bge-base-en-v1.5's actual tokenizer -- matches
-    what the embedding model will really see, including its 512-token
-    limit. This is the function every chunker calls by default."""
     if not text:
         return 0
     return len(_BGE_ENC.encode(text, add_special_tokens=False))
 
 
 def make_chunk_id(source_path: str, section_path: str, ordinal: int) -> str:
-    """Deterministic id: same input always produces the same id, so re-running
-    ingestion doesn't silently create duplicate/renumbered chunks in the vector
-    store. Short hash keeps ids compact for logging and citation display."""
     raw = f"{source_path}::{section_path}::{ordinal}"
     h = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
     return f"chunk_{h}"
@@ -182,13 +136,8 @@ def write_chunks(chunks: list[Chunk], path: str) -> None:
     print(f"[ingestion] wrote {len(chunks)} chunks -> {path}")
 
 
-# ============================================================================
-# 2. Shortcode utilities (was shortcode_utils.py)
-# ============================================================================
+
 # Everything specific to the Kubernetes/Hugo markdown dialect lives here,
-# isolated so the chunking logic itself stays generic and reusable if a 4th
-# doc source that isn't Hugo-flavored is ever added.
-#
 # Handles, per the design decisions locked in earlier in this project:
 #   - YAML frontmatter parsing
 #   - {{< include "file.md" >}} transclusion (resolved BEFORE chunking)
@@ -201,8 +150,6 @@ def write_chunks(chunks: list[Chunk], path: str) -> None:
 #     stripped as low-value template noise
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
-
-
 def _block_re(tag: str) -> re.Pattern:
     """Matches {{< TAG ...attrs... >}}...{{< /TAG >}} (block form)."""
     return re.compile(
@@ -235,11 +182,7 @@ ATTR_RE = re.compile(r'(\w[\w-]*)\s*=\s*"([^"]*)"')
 def _parse_attrs(attr_str: str) -> dict:
     return dict(ATTR_RE.findall(attr_str))
 
-
 def parse_frontmatter(raw_text: str) -> tuple[dict, str]:
-    """Split YAML frontmatter from body. Returns (metadata_dict, body_text).
-    Never let this metadata get chunked as prose -- extract once, discard
-    the raw block from the text that will be embedded."""
     m = FRONTMATTER_RE.match(raw_text)
     if not m:
         return {}, raw_text
@@ -252,9 +195,7 @@ def parse_frontmatter(raw_text: str) -> tuple[dict, str]:
 
 
 def resolve_includes(body: str, base_dir: Path, _depth: int = 0) -> str:
-    """Inline {{< include "file.md" >}} content in place, per the Phase 0
-    decision: resolve at ingestion time so no chunk ends up silently missing
-    prerequisite content. Depth-guarded against include cycles."""
+
     if _depth > 4:
         return body
 
@@ -295,11 +236,7 @@ def extract_admonitions(body: str) -> tuple[str, list[str]]:
 
 
 def resolve_glossary(body: str) -> str:
-    """{{< glossary_tooltip text="foo" term_id="bar" >}} -> 'foo'
-    We don't have the live glossary data source in this pipeline, so we
-    fall back to the tooltip's own display text (the `text=` attr), which
-    is exactly what a reader would see rendered -- correct behavior even
-    without a separate glossary lookup."""
+
     def _sub(m):
         attrs = _parse_attrs(m.group(1))
         return attrs.get("text", attrs.get("term_id", ""))
@@ -310,7 +247,6 @@ def resolve_glossary(body: str) -> str:
 
 
 def extract_feature_state(body: str) -> tuple[str, Optional[str]]:
-    """Pull min k8s version out to metadata, strip the shortcode from text."""
     version = None
 
     def _sub(m):
@@ -326,10 +262,6 @@ def extract_feature_state(body: str) -> tuple[str, Optional[str]]:
 
 
 def flatten_tabs(body: str) -> str:
-    """{{< tabs >}}{{< tab name="Linux" >}}...{{< /tab >}}...{{< /tabs >}}
-    -> sequential '**Linux**\\n...' sections. Keeps the OS/variant label
-    (valuable — many k8s tasks differ by platform) without losing content
-    behind an unrendered tab widget."""
     def _tabs_sub(m):
         inner = m.group(1)
         parts = []
@@ -342,21 +274,12 @@ def flatten_tabs(body: str) -> str:
 
 
 def strip_generic_shortcodes(body: str) -> str:
-    """Final pass: remove whatever low-value single-line shortcodes remain
-    ({{< skew >}}, {{< version-check >}}, {{% heading "x" %}}, etc.) —
-    these carry no retrievable meaning once frontmatter/feature-state/
-    admonitions have already been extracted above."""
+
     return GENERIC_SHORTCODE_RE.sub("", body)
 
 
 def clean_body(body: str, base_dir: Path) -> tuple[str, dict]:
-    """Run the full resolution pipeline in the correct order. Order matters:
-    includes must resolve first (they can contain their own shortcodes),
-    admonitions/glossary/feature-state/tabs must resolve before the generic
-    catch-all, or the catch-all will blindly delete their content instead
-    of transforming it.
-    Returns (cleaned_text, extracted_metadata_dict).
-    """
+
     body = resolve_includes(body, base_dir)
     body, admonitions = extract_admonitions(body)
     body = resolve_glossary(body)
@@ -379,20 +302,13 @@ def extract_cross_references(text: str) -> list[str]:
     return sorted(set(re.findall(r"\]\((/docs/[^)#\s]+)", text)))
 
 
-# ============================================================================
-# 3. Safe splitter (was safe_splitter.py)
-# ============================================================================
-# The fallback splitter: only invoked when a structurally-derived section
+
+# Safe splitter
 # (an H2 in Tier 1, a clause in Tier 2) exceeds MAX_CHUNK_TOKENS.
-#
 # Guarantees:
 #   - never splits inside a fenced code block (``` ... ```)
 #   - splits on paragraph boundaries first, sentence boundaries second
 #   - never splits inside a paragraph that is itself a code fence
-#
-# This is intentionally the LAST resort in the pipeline, per the earlier
-# design decision: heading/section structure is the primary chunk boundary;
-# token windows only fire as overflow handling.
 
 MAX_CHUNK_TOKENS = 800
 TARGET_CHUNK_TOKENS = 512
@@ -461,12 +377,12 @@ def split_oversized_section(text: str, max_tokens: int = MAX_CHUNK_TOKENS,
     return windows if windows else [text]
 
 
-# ============================================================================
-# 4. Tier 1: docs (was chunk_docs.py)
-# ============================================================================
+
+# Tier 1: docs 
+
 # Method: RECURSIVE heading-aware hierarchical chunking (H2 -> H3 -> H4),
 # code-fence/shortcode-safe, with parent-child retrieval expansion.
-#
+
 # Rules implemented here:
 #   1. Parse + strip YAML frontmatter -> metadata, never chunked as text.
 #   2. Resolve {{< include >}} before chunking.
@@ -530,9 +446,6 @@ def _normalize_source_path(file_path: Path, corpus_root: Path) -> str:
 
 
 def _clean_and_extract(section_raw: str, base_dir: Path, title: str, heading: str | None):
-    """Shared per-section cleanup: shortcode/admonition cleaning, cross-refs,
-    and the doc-title + heading context header. Returns (full_text, extracted,
-    cross_refs) or (None, None, None) if the section has no real content."""
     cleaned, extracted = clean_body(section_raw, base_dir=base_dir)
     if not cleaned.strip():
         return None, None, None
@@ -555,8 +468,7 @@ def _emit_leaf_chunks(full_text: str, heading: str | None, parent_id: str | None
                        source_path: str, title: str, content_type: str,
                        extracted, cross_refs, meta: dict,
                        ordinal_box: list, chunks: list[Chunk]) -> None:
-    """Final step for a section that has nowhere deeper to recurse into:
-    safe_splitter is the true last resort here, unchanged from before."""
+    
     pieces = split_oversized_section(full_text, max_tokens=MAX_CHUNK_TOKENS)
     for piece in pieces:
         tokens = count_tokens(piece)
@@ -586,10 +498,7 @@ def _recursive_split(section_raw: str, level: int, parent_id: str | None,
                       content_type: str, meta: dict,
                       ordinal_box: list, chunks: list[Chunk],
                       parents: list[ParentSection]) -> None:
-    """Core of rule 6/7: recurse H2 -> H3 -> H4. A section becomes a
-    ParentSection (recorded once) only if it's actually split further;
-    its children's `parent_id` points to it -- one level up, not to the
-    document root."""
+  
     heading = _section_heading(section_raw, level=min(level, 4))
     full_text, extracted, cross_refs = _clean_and_extract(
         section_raw, base_dir=file_path.parent, title=title, heading=heading
@@ -645,12 +554,10 @@ def chunk_docs_file(file_path: Path, corpus_root: Path) -> tuple[list[Chunk], li
     content_type = meta.get("content_type", "unknown")
     source_path = _normalize_source_path(file_path, corpus_root)
 
-    # Strip the overview/steps/body HTML-comment markers -- they're layout
-    # hints for the Hugo renderer, not content boundaries we chunk on.
+    
     body = STEP_MARKER_RE.sub("", body)
 
     sections = _split_at_level(body, 2)
-    # If the doc has no H2 at all, treat the whole body as one section.
     if len(sections) <= 1:
         sections = [body]
 
@@ -701,9 +608,9 @@ def run_docs(docs_root: str, output_path: str, parents_output_path: str | None =
     return all_chunks
 
 
-# ============================================================================
-# 5. Tier 2: policy (was chunk_policy.py)
-# ============================================================================
+
+# Tier 2: policy
+
 # Method: section-based chunking on H2 (`## `) boundaries, same principle as
 # Tier 1 but much simpler in practice, because the real data confirms:
 #   - no frontmatter (plain # Title heading instead)
@@ -798,9 +705,9 @@ def run_policy(policy_root: str, output_path: str) -> list[Chunk]:
     return all_chunks
 
 
-# ============================================================================
-# 6. Tier 3: support (was chunk_support.py)
-# ============================================================================
+
+# 6. Tier 3: support
+
 # Method: one chunk per Q&A pair, no splitting. Confirmed appropriate by
 # directly measuring the actual data: 15 pairs, answer length 126-215 chars
 # (~35-55 tokens), min-to-max range is narrow and nowhere near chunk-size
@@ -816,8 +723,7 @@ def run_policy(policy_root: str, output_path: str) -> list[Chunk]:
 # them in one chunk means a single vector search returns both, no join needed
 # downstream. `intent` is preserved as a filterable metadata field.
 
-SUPPORT_LENGTH_WARNING_TOKENS = 300  # if an answer approaches this, atomic chunking assumption should be re-examined
-
+SUPPORT_LENGTH_WARNING_TOKENS = 300  
 
 def chunk_support_file(file_path: Path) -> list[Chunk]:
     chunks: list[Chunk] = []
@@ -878,10 +784,8 @@ def run_support(support_file: str, output_path: str) -> list[Chunk]:
     return chunks
 
 
-# ============================================================================
-# 7. Orchestration (was ingestion/main.py)
-# ============================================================================
 
+# Orchestration
 PROJECT_ROOT = Path(__file__).resolve().parent
 RAW = PROJECT_ROOT / "data"
 PROCESSED = PROJECT_ROOT / "data" / "processed"
@@ -985,8 +889,7 @@ def run_ingestion() -> list[Chunk]:
     all_chunks = docs_chunks + policy_chunks + support_chunks
     merge_and_write(all_chunks)
 
-    # Tier 1 only (see run_docs docstring rule 7) -- run_docs() already
-    # wrote data/processed/parents_docs.jsonl as a side effect.
+   
     merge_parents([PROCESSED / "parents_docs.jsonl"])
 
     with_parent = sum(1 for c in docs_chunks if c.parent_id)
