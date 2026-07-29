@@ -1,0 +1,7 @@
+requests>=2.31
+numpy
+# sentence-transformers, qdrant-client already required by Embedding/Retrieval
+# (Generation imports Embedding.query_embed for the scope-check embedding
+# signal, and Retrieval.pipeline for retrieve()). Ollama runs as a separate
+# local process, not a pip dependency:
+#   https://ollama.com  ->  ollama pull qwen3:8b  ->  ollama serve
