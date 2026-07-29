@@ -1,0 +1,33 @@
+cd ~/DocuMind   # or wherever you unzipped it
+source venv/bin/activate
+docker ps   # confirm the qdrant container is up
+docker run -d -p 6333:6333 -p 6334:6334 -v ~/qdrant_storage:/qdrant/storage qdrant/qdrant
+curl http://localhost:6333/collections
+
+
+-----------------------
+ollama 
+
+Get-Process ollama | Stop-Process -Force
+$env:OLLAMA_HOST = "0.0.0.0"
+ollama serve
+
+------------------------------
+Wsl 
+
+export DOCUMIND_REFUSAL_THRESHOLD=-9.64
+export DOCUMIND_OLLAMA_HOST="http://172.22.64.1:11434"
+python -m Generation.run_phase5 ask "What happens if I change the CPU manager policy from none to static without draining the node first?"
+
+python -m Generation.run_phase5 ask "What are the warnings about CPU manager for k8s 1.26+?"
+
+
+--python check_retrieval.py > retrieval_check_output.txt
+
+
+
+
+export DOCUMIND_LLM_TIMEOUT_S=600
+export DOCUMIND_REFUSAL_THRESHOLD=-9.64
+export DOCUMIND_OLLAMA_HOST="http://172.22.64.1:11434"
+python -m Generation.run_phase5 ask "Why should I drain the node before changing CPU manager policy?"

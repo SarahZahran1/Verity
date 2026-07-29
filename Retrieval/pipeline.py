@@ -44,6 +44,7 @@ class RetrievalResult:
     admonition_type: str | None
     citation: str
     parent_text: str | None = None
+    parent_id: str | None = None
 
 
 def _format_citation(payload: dict) -> str:
@@ -97,6 +98,7 @@ def retrieve(
                 admonition_type=payload.get("admonition_type"),
                 citation=_format_citation(payload),
                 parent_text=parent_text,
+                parent_id=payload.get("parent_id"),
             )
         )
     return results
