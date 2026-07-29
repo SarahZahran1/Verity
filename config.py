@@ -1,48 +1,22 @@
-"""
-config.py — single source of truth for every phase (ingestion, embedding,
-retrieval, generation, evaluation).
 
-This replaces three separate config.py files (Embedding/, Retrieval/,
-Generation/) that previously re-exported each other in a daisy chain
-(Retrieval.config imported from Embedding.config, Generation.config
-imported from Retrieval.config). That indirection made sense when each
-phase was a standalone package; once everything lives in one project it
-just adds a layer of chasing imports to find a single constant. All
-values below are unchanged from the original three files unless a
-comment says otherwise.
-"""
 from __future__ import annotations
-
 import logging
 import os
 
-# ============================================================================
-# Embedding model (was Embedding/config.py)
-# ============================================================================
-# bge-base-en-v1.5 chosen after benchmarking against text-embedding-3-small
-# and e5-base-v2 on the gold set. Free, local, no API cost, and strong
-# enough for this single-domain English corpus.
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 EMBEDDING_DIM = 768
-
-# BGE is an asymmetric-retrieval model: passages are embedded raw, but
-# queries MUST be prefixed with this instruction string at retrieval time,
-# or recall drops noticeably. Never apply this prefix to chunk/passage text.
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 
-# --- Paths ------------------------------------------------------------------
+# Paths 
 CHUNKS_PATH = os.environ.get("DOCUMIND_CHUNKS_PATH", "data/processed/chunks_all.jsonl")
 PARENTS_PATH = os.environ.get("DOCUMIND_PARENTS_PATH", "data/processed/parents_all.jsonl")
 EMBEDDINGS_CACHE_PATH = os.environ.get(
     "DOCUMIND_EMBEDDINGS_PATH", "data/processed/embeddings_bge_base.npy"
 )
 
-# --- Qdrant -------------------------------------------------------------
-# Chosen over pgvector for this project: no SQL/Postgres background needed,
-# the Python client works with native dicts/filter objects, one-command
-# Docker setup, and built-in sparse+dense hybrid search support.
+# Qdrant
 QDRANT_URL = os.environ.get("DOCUMIND_QDRANT_URL", "http://localhost:6333")
-QDRANT_API_KEY = os.environ.get("DOCUMIND_QDRANT_API_KEY")  # None for local Docker
+QDRANT_API_KEY = os.environ.get("DOCUMIND_QDRANT_API_KEY" "")  # None for local Docker
 # Dense-only collection (Phase 3 baseline, kept for eval_retrieval comparisons)
 QDRANT_COLLECTION_DENSE_ONLY = os.environ.get(
     "DOCUMIND_QDRANT_DENSE_ONLY_COLLECTION", "documind_chunks"
