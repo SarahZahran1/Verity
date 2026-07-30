@@ -1,10 +1,10 @@
-
 from __future__ import annotations
 import logging
 import os
 
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 EMBEDDING_DIM = 768
+EMBEDDING_DEVICE = os.environ.get("DOCUMIND_EMBEDDING_DEVICE", "cpu")
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 
 # Paths 
@@ -16,7 +16,7 @@ EMBEDDINGS_CACHE_PATH = os.environ.get(
 
 # Qdrant
 QDRANT_URL = os.environ.get("DOCUMIND_QDRANT_URL", "http://localhost:6333")
-QDRANT_API_KEY = os.environ.get("DOCUMIND_QDRANT_API_KEY" )  
+QDRANT_API_KEY = os.environ.get("DOCUMIND_QDRANT_API_KEY")  
 QDRANT_COLLECTION_DENSE_ONLY = os.environ.get(
     "DOCUMIND_QDRANT_DENSE_ONLY_COLLECTION", "documind_chunks"
 )
@@ -40,8 +40,6 @@ ENABLE_TIMING = os.environ.get("DOCUMIND_ENABLE_TIMING", "1") not in ("0", "fals
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Shared logger factory so every module logs at the same level/format
-    instead of each one calling print() with its own prefix."""
     logger = logging.getLogger(name)
     if not logger.handlers:
         handler = logging.StreamHandler()
@@ -59,7 +57,7 @@ THINKING_ENABLED = False
 PARENT_TEXT_MAX_CHARS = 6000
 
 # OpenRouter 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 GENERATOR_MODEL = os.environ.get("DOCUMIND_GENERATOR_MODEL", "deepseek/deepseek-chat-v3")
@@ -67,7 +65,7 @@ JUDGE_MODEL = os.environ.get("DOCUMIND_JUDGE_MODEL", "deepseek/deepseek-chat-v3"
 GENERATION_TEMPERATURE = 0.1
 JUDGE_TEMPERATURE = 0.0
 GENERATION_MAX_TOKENS = 1536
-LLM_TIMEOUT_S = 120
+LLM_TIMEOUT_S = 600
 
 # Refusal 
 REFUSAL_RERANK_THRESHOLD = float(os.environ.get("DOCUMIND_REFUSAL_THRESHOLD", "-9.64"))
@@ -113,8 +111,6 @@ EVAL_RESULTS_DIR = "data/eval_results"
 
 
 def require_openrouter_key() -> str:
-    """Fail loudly and early if OPENROUTER_API_KEY isn't set, instead of
-    letting every downstream request fail with an opaque 401."""
     if not OPENROUTER_API_KEY:
         raise RuntimeError(
             "OPENROUTER_API_KEY is not set. Export it before running any "

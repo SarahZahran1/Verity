@@ -1,46 +1,3 @@
-"""
-retrieval.py — merges Retrieval/filters.py, sparse_embed.py,
-hybrid_search.py, rerank.py, pipeline.py, migrate_hybrid.py,
-eval_retrieval.py (7->1).
-
-Preserved exactly, per the Phase 1 plan:
-  - RRF fusion stays server-side in Qdrant (`FusionQuery(fusion=Fusion.RRF)`)
-    via the raw qdrant_client -- this is a hand-tuned multi-vector prefetch
-    (separate dense/sparse limits, then fuse) that LangChain's
-    QdrantVectorStore doesn't expose a knob for, so it's kept as direct
-    client calls, unchanged logic from the old hybrid_search.py.
-  - Parent-expansion logic (pipeline.py) -- unchanged.
-  - Eval methodology (recall@k, MRR, per-tier breakdown, dense vs.
-    hybrid vs. hybrid+rerank comparison) -- unchanged.
-
-Two real changes, both required by the Phase 4 switch to
-`QdrantVectorStore` and explained here before being applied:
-
-1. **Payload schema.** `QdrantVectorStore` stores embedded text under a
-   `page_content` key and everything else nested under a `metadata` key
-   (its fixed convention), instead of the old hand-rolled payload's flat
-   `content` + top-level fields. Every place that reads `payload["content"]`
-   or `payload["tier"]` etc. now reads `payload["page_content"]` /
-   `payload["metadata"]["tier"]`. `filters.py`'s field keys move from
-   `"tier"` to `"metadata.tier"` to match. Purely a read-path adjustment --
-   no data, ranking, or retrieval behavior changes.
-2. **`migrate_hybrid.py` is dropped, not merged in.** It existed to
-   backfill a hybrid collection from a *cached dense .npy array* left by
-   the old dense-only `embed_chunks.py`. Phase 4's `embeddings.py` now
-   writes the hybrid (dense+sparse) collection directly in one pass via
-   `QdrantVectorStore.from_texts()` -- there's no dense-only cache left to
-   migrate from, so the two-step "create dense -> backfill to hybrid"
-   flow has no input to run on anymore. `dense_only_retrieve()` below
-   (used only by the eval comparison, unchanged from before) already
-   queried the *hybrid* collection's dense vector directly rather than a
-   separate dense-only collection, so eval behavior is unaffected by
-   this removal -- `QDRANT_COLLECTION_DENSE_ONLY` was already unused by
-   any retrieval code path and is not carried forward.
-
-Sparse query embedding stays a direct `fastembed` call (unchanged from
-sparse_embed.py) since the RRF path needs a raw `SparseVector` to pass to
-`Prefetch`, not a LangChain `Embeddings` object.
-"""
 
 from __future__ import annotations
 
@@ -50,7 +7,6 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import lru_cache
-
 from fastembed import SparseTextEmbedding
 from qdrant_client import QdrantClient, models
 from qdrant_client.models import Prefetch, FusionQuery, Fusion, Filter, FieldCondition, MatchValue
@@ -61,25 +17,11 @@ from embeddings import embed_query, get_client
 
 log = config.get_logger("retrieval")
 
-# ============================================================================
-# 1. Filters (was filters.py)
-# ============================================================================
-# Small helper for building Qdrant metadata filters from plain kwargs, so
-# callers (the query router, or eval scripts) don't need to import
-# qdrant_client.models directly for the common cases.
 
 
-def build_filter(
-    admonition_type: str | None = None,
-    tier: str | None = None,
-    source_type: str | None = None,
-    min_k8s_version: str | None = None,
-    has_code_block: bool | None = None,
+def build_filter(admonition_type: str | None = None,tier: str | None = None,source_type: str | None = None,min_k8s_version: str | None = None,has_code_block: bool | None = None,
 ) -> Filter | None:
-    """AND's together whichever of these are provided. None = "not part of the
-    filter", not "match null" -- pass admonition_type="warning" to filter for
-    warnings, leave it None to search across all admonition types.
-    """
+    
     must = []
     if admonition_type is not None:
         must.append(FieldCondition(key="metadata.admonition_type", match=MatchValue(value=admonition_type)))
@@ -96,14 +38,8 @@ def build_filter(
         return None
     return Filter(must=must)
 
-
-# ============================================================================
-# 2. Sparse query embedding (was sparse_embed.py)
-# ============================================================================
-
+#   Sparse query embedding
 _sparse_model: SparseTextEmbedding | None = None
-
-
 def _get_sparse_model() -> SparseTextEmbedding:
     global _sparse_model
     if _sparse_model is None:
@@ -117,26 +53,15 @@ def embed_query_sparse(text: str) -> models.SparseVector:
     return models.SparseVector(indices=emb.indices.tolist(), values=emb.values.tolist())
 
 
-# ============================================================================
-# 3. Hybrid search (was hybrid_search.py)
-# ============================================================================
-# Qdrant runs both dense and sparse searches and fuses them server-side in
-# one `query_points` call -- no separate BM25 index, no hand-rolled RRF loop.
-
-
+#  Hybrid search
 @dataclass
 class RetrievedChunk:
     chunk_id: str
     score: float
-    payload: dict  # {"page_content": str, "metadata": {...}} -- QdrantVectorStore's schema
+    payload: dict  # {"page_content": str, "metadata": {...}} QdrantVectorStore's schema
 
 
-def hybrid_retrieve(
-    question: str,
-    top_n: int = config.FUSED_TOP_N,
-    prefetch_limit: int = config.PREFETCH_LIMIT,
-    query_filter: Filter | None = None,
-    client: QdrantClient | None = None,
+def hybrid_retrieve(question: str,top_n: int = config.FUSED_TOP_N,prefetch_limit: int = config.PREFETCH_LIMIT,query_filter: Filter | None = None,client: QdrantClient | None = None,
 ) -> list[RetrievedChunk]:
     client = client or get_client()
 
@@ -223,9 +148,8 @@ def dense_only_retrieve(
     ]
 
 
-# ============================================================================
-# 4. Reranking (was rerank.py)
-# ============================================================================
+# Reranking
+
 
 _rerank_model: CrossEncoder | None = None
 
@@ -280,13 +204,8 @@ def rerank(
     ranked.sort(key=lambda r: r.rerank_score, reverse=True)
     return ranked[:top_k]
 
-
 class RerankCompressor:
-    """LangChain `BaseDocumentCompressor`-shaped wrapper around rerank(),
-    so the generation-phase LCEL chain (Phase 6) can compose retrieval as
-    `retriever | RerankCompressor(...)` instead of calling rerank()
-    imperatively. Thresholds/logic are identical to rerank() above --
-    this is purely an adapter, not a reimplementation."""
+  
 
     def __init__(self, top_k: int = config.FINAL_TOP_K):
         self.top_k = top_k
@@ -295,13 +214,7 @@ class RerankCompressor:
         return rerank(question, candidates, top_k=self.top_k)
 
 
-# ============================================================================
-# 5. Pipeline orchestration (was pipeline.py)
-# ============================================================================
-# hybrid retrieve (dense+sparse, RRF-fused) -> cross-encoder rerank ->
-# optional parent-section expansion for citation display.
-
-
+# Pipeline orchestration
 @lru_cache(maxsize=1)
 def _load_parents() -> dict[str, dict]:
     parents: dict[str, dict] = {}
@@ -389,13 +302,7 @@ def retrieve(
     return results
 
 
-# ============================================================================
-# 6. Retrieval eval (was eval_retrieval.py)
-# ============================================================================
-# recall@k / MRR / latency, dense-only vs. hybrid-RRF vs. hybrid+rerank,
-# broken down per tier -- unchanged methodology from the original.
-
-
+# Retrieval eval
 def load_gold(path: str = config.GOLD_EVAL_PATH) -> list[dict]:
     rows = []
     with open(path, encoding="utf-8") as f:

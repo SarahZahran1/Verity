@@ -2,9 +2,11 @@ venv/
 __pycache__/
 *.pyc
 data/processed/embeddings_bge_base.npy
+data/processed/
+data/eval_results/
 .env
 
 pretty_jsonl.py
-requirements_old.txt
-requirements_wsl2.txt
+
 .vscode/
+*.txt

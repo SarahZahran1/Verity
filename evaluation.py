@@ -27,13 +27,6 @@ log = config.get_logger("evaluation")
 
 EXPECTED_REFUSAL_PREFIX = "REFUSE"
 
-# ============================================================================
-# 1. RAGAS-style judge prompts (was prompts.py, judge portion)
-# ============================================================================
-# These mirror the RAGAS metric definitions (faithfulness, answer relevance,
-# context precision, context recall) closely enough to be a faithful local
-# reimplementation, run through the configured judge model instead of the
-# ragas package's default OpenAI-backed judge.
 
 JUDGE_FAITHFULNESS_PROMPT = """You are evaluating whether an AI-generated answer is faithful to its \
 retrieved source context (i.e. every claim in the answer is actually \
@@ -100,17 +93,6 @@ the retrieved context. Respond with ONLY a JSON object, no other text:
 {{"attributable_statements": <int>, "total_statements": <int>}}"""
 
 
-# ============================================================================
-# 2. RAGAS-style evaluation (was ragas_eval.py)
-# ============================================================================
-# Runs the full Retrieval -> Rerank -> Generation pipeline against the gold
-# QA set and scores it on the four RAGAS metrics (faithfulness, answer
-# relevance, context precision, context recall).
-#
-# Expected-refusal rows in the gold set (tier == "adversarial", answer
-# starting with "REFUSE") are scored separately as a refusal-accuracy
-# metric rather than faithfulness/context-recall, since they have no real
-# reference context to recall.
 
 
 @dataclass

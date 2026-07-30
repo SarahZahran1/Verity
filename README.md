@@ -1,16 +1,43 @@
-# DocuMind
+# DocuMind — Streamlit Frontend
 
-A RAG system over three document tiers — Kubernetes docs, internal policy
-docs, and support Q&A tickets — with recursive heading-aware chunking,
-hybrid (dense + sparse) retrieval with cross-encoder reranking, parent-
-section expansion, scope/confidence guardrails, and a local RAGAS-style
-evaluation suite.
+A production-style Streamlit UI for the DocuMind RAG platform. This
+repository contains **frontend code only** — it imports and calls the
+existing backend (`config.py`, `embeddings.py`, `ingestion.py`,
+`retrieval.py`, `generation.py`, `evaluation.py`) and does not
+reimplement any retrieval, generation, guardrail, or evaluation logic.
 
-This is the LangChain-refactored version of the original 32-file project:
-same behavior, same chunking strategy, same retrieval quality, same
-evaluation methodology — reorganized into 7 files, with LangChain used
-where it's a genuine fit (embeddings, vector store, LLM calls) and kept as
-plain Python where it isn't (chunking, guardrails, judge logic).
+---
+
+## Table of contents
+
+- [DocuMind — Streamlit Frontend](#documind--streamlit-frontend)
+  - [Table of contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Architecture](#architecture)
+  - [Pages](#pages)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Configuration](#configuration)
+  - [Running the app](#running-the-app)
+    - [First-time setup checklist](#first-time-setup-checklist)
+  - [Project structure](#project-structure)
+  - [Troubleshooting](#troubleshooting)
+  - [Security notes](#security-notes)
+
+---
+
+## Overview
+
+DocuMind is a retrieval-augmented generation (RAG) system covering three
+document tiers — **Kubernetes documentation**, **internal policy
+documents**, and **support tickets** — with hybrid (dense + sparse)
+retrieval, cross-encoder reranking, parent-section expansion, scope and
+confidence guardrails, and a RAGAS-style evaluation suite.
+
+This frontend gives non-CLI users (analysts, support staff, stakeholders)
+a way to interact with that backend: ask questions, inspect retrieval
+quality, ingest new documents, run evaluations, and audit past
+inferences — all through a browser.
 
 ## Architecture
 
@@ -18,164 +45,164 @@ plain Python where it isn't (chunking, guardrails, judge logic).
 question
   │
   ▼
-generation.check_scope()  ──── out of scope ───► refuse (no retrieval call)
+generation.check_scope()          ── out of scope ──► refuse (no retrieval call)
   │ in scope
   ▼
-retrieval.retrieve()            [hybrid dense+sparse search, RRF fusion,
-  │                               cross-encoder rerank, parent expansion]
+retrieval.retrieve()              [hybrid dense+sparse search, RRF fusion,
+  │                                 cross-encoder rerank, parent expansion]
   ▼
-generation.evaluate_guardrails(top_rerank_score)  ── low confidence ───► refuse
+generation.evaluate_guardrails()  ── low confidence ──► refuse
   │ confident enough
   ▼
-generation.build_generation_prompt()
+generation.generate()             [LCEL chain via OpenRouter]
   │
   ▼
-generation.generate()           [LCEL chain: prompt | ChatOpenAI(OpenRouter) | parser]
+generation.log_inference()        [SQLite inference_logs]
   │
   ▼
-generation.log_inference()      [SQLite inference_logs]
-  │
-  ▼
-answer + inline citations
+answer + inline citations  ──►  rendered in the Streamlit UI
 ```
 
-Ingestion (`ingestion.py`) and embedding (`embeddings.py`) run upstream of
-this, one time (or on re-index), to build `data/processed/chunks_all.jsonl`
-/ `parents_all.jsonl` and populate the Qdrant hybrid collection.
-`evaluation.py` runs downstream, against the gold QA set.
+The Streamlit app (`app.py`) sits entirely at the last step: it calls
+`generation.answer_question()` (which runs the whole pipeline above) and
+renders the result. Every other page maps to a specific backend
+capability — see [Pages](#pages) below.
 
-## Files
+## Pages
 
-| File | Responsibility | Merged from (original project) |
+| Page | Backend call(s) | Purpose |
 |---|---|---|
-| `config.py` | All settings: embedding model, Qdrant, retrieval, generation, guardrails, eval — env-var overridable | 3 `config.py` files |
-| `ingestion.py` | Tier 1 (recursive heading chunker, Hugo shortcode cleaner), Tier 2 (policy H2 chunker), Tier 3 (support Q&A pairs), shared primitives, orchestration | `common.py`, `shortcode_utils.py`, `safe_splitter.py`, `chunk_docs.py`, `chunk_policy.py`, `chunk_support.py`, `ingestion/main.py` |
-| `embeddings.py` | BGE dense embeddings (`HuggingFaceEmbeddings`) + sparse (BM25 via `FastEmbedSparse`), hybrid Qdrant collection via `QdrantVectorStore` | `Embedding/db.py`, `embed_chunks.py`, `query_embed.py`, `Embedding/main.py` |
-| `retrieval.py` | Metadata filters, hybrid RRF search, cross-encoder rerank, parent-section expansion, recall@k/MRR eval | `filters.py`, `sparse_embed.py`, `hybrid_search.py`, `rerank.py`, `pipeline.py`, `migrate_hybrid.py` (dropped, see below), `eval_retrieval.py` |
-| `generation.py` | Generation system prompt, LCEL/`ChatOpenAI` LLM client, guardrails (scope + refusal), SQLite inference logging, end-to-end orchestration | `prompts.py` (gen portion), `llm_client.py`, `guardrails.py`, `generate.py`, `logging_db.py` |
-| `evaluation.py` | RAGAS-style judge prompts, 4-metric evaluation (faithfulness, answer relevance, context precision, context recall), refusal-threshold calibration | `prompts.py` (judge portion), `ragas_eval.py`, `run_phase5.py`'s `calibrate` |
-| `cli.py` | Single CLI entrypoint: `ingest`, `embed`, `retrieval-eval`, `retrieve`, `ask`, `eval`, `calibrate`, `logs`, `all` | `ingestion/main.py`, `Embedding/main.py`, `Retrieval/main.py`, `Generation/run_phase5.py` |
+| 🏠 **Dashboard** | `embeddings.get_client()`, `generation.fetch_recent()` | System health at a glance — Qdrant connectivity, indexed chunk count, recent activity. |
+| 💬 **Ask DocuMind** | `generation.answer_question()` | Core Q&A experience — grounded answers, inline citations, refusal reasons, retrieved chunks. |
+| 🔎 **Retrieval Explorer** | `retrieval.retrieve()` | Inspect hybrid retrieval and reranking in isolation, without an LLM call. |
+| 🛡️ **Guardrails Inspector** | `generation.check_scope()` | Test scope classification for a question before it reaches retrieval. |
+| 📥 **Document Ingestion** | `ingestion.run_docs/run_policy/run_support/run_ingestion()`, `embeddings.run_embedding()` | Upload new source files, re-chunk, and re-embed into Qdrant. |
+| 📊 **Evaluation Dashboard** | `evaluation.run_evaluation()`, `save_report()`, `calibrate_threshold()` | Run the RAGAS-style eval suite and review scores, per-tier breakdown, and past reports. |
+| 🧾 **Inference Logs** | `generation.fetch_recent()` | Audit trail of every inference: question, retrieval scores, prompt, answer, latency. |
+| ⚙️ **System Settings** | `config.*`, `embeddings.get_client()` | View effective configuration and test Qdrant connectivity. |
+| ℹ️ **About** | — | Static architecture explainer. |
 
-## What changed vs. the original (and why)
+## Prerequisites
 
-**Security fix.** The old `Generation/config.py` hardcoded a live
-OpenRouter API key as an `os.environ.get(...)` default. `config.py` now
-requires `OPENROUTER_API_KEY` from the environment and raises a clear
-error if it's missing. **Rotate the old key if you haven't already.**
+- Python 3.10+
+- A running [Qdrant](https://qdrant.tech/) instance (local or remote)
+- An [OpenRouter](https://openrouter.ai/) API key (used for generation
+  and the RAGAS judge model)
+- The DocuMind backend modules (`config.py`, `embeddings.py`,
+  `ingestion.py`, `retrieval.py`, `generation.py`, `evaluation.py`) in
+  the same directory as `app.py`
 
-**Hybrid vector store via LangChain.** `embeddings.py` uses
-`HuggingFaceEmbeddings` (dense, BGE) + `langchain_qdrant.QdrantVectorStore`
-in `RetrievalMode.HYBRID` instead of hand-rolled `PointStruct` construction.
-This is a genuine capability upgrade (sparse vectors are new — dense
-quality, model, and distance metric are unchanged) and removes the need
-for a separate `.npy` embedding cache, since embed+upsert now happen
-atomically. One consequence: stored payloads use `QdrantVectorStore`'s
-fixed schema (`page_content` / `metadata.*`) instead of the old flat
-payload — `retrieval.py`'s filters and readers were updated to match.
-
-**`migrate_hybrid.py` dropped.** It existed to backfill a hybrid
-collection from a cached dense `.npy` array left by the old dense-only
-embedding step. That cache no longer exists (see above), so the script
-has nothing left to migrate from — `embeddings.py` now writes the hybrid
-collection directly in one pass.
-
-**LLM calls via LCEL.** `generation.py`'s `generate()`/`judge()` now go
-through `ChatPromptTemplate | ChatOpenAI(base_url=OpenRouter) | parser`
-instead of raw `requests.post`. OpenRouter is OpenAI-schema-compatible, so
-this is a client swap, not a behavior change. The old hand-rolled 429
-retry loop is replaced by `ChatOpenAI(max_retries=3)`, which covers more
-transient-failure modes than the original single-purpose retry.
-
-**Everything else — chunking rules, RRF fusion, rerank model/logic,
-parent-child expansion, guardrail thresholds, RAGAS metric definitions,
-calibration methodology — is unchanged.** Where the plan required
-touching these, it's called out above; nothing else was altered.
-
-## Setup
+## Installation
 
 ```bash
-pip install -r requirements.txt
+git clone <your-repo-url>
+cd DocuMind
 
-export OPENROUTER_API_KEY=sk-or-v1-...   # required, no fallback
-export DOCUMIND_QDRANT_URL=http://localhost:6333   # default; point at your Qdrant
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+
+pip install -r requirements.txt
+pip install streamlit pandas    # if not already in requirements.txt
 ```
 
-Bring up Qdrant locally if you don't have one:
+## Configuration
+
+All configuration is read from `config.py`, which is env-var
+overridable. Set these before starting the app:
+
+```bash
+# Required
+export OPENROUTER_API_KEY=sk-or-v1-...
+
+# Optional (defaults shown)
+export DOCUMIND_QDRANT_URL=http://localhost:6333
+export DOCUMIND_QDRANT_HYBRID_COLLECTION=documind_chunks_hybrid
+export DOCUMIND_GENERATOR_MODEL=deepseek/deepseek-chat-v3
+export DOCUMIND_JUDGE_MODEL=deepseek/deepseek-chat-v3
+export DOCUMIND_REFUSAL_THRESHOLD=-9.64
+export DOCUMIND_RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+export DOCUMIND_LOG_LEVEL=INFO
+```
+
+Add these to your shell profile (`~/.bashrc`, `~/.zshrc`) to avoid
+re-exporting them every session.
+
+Bring up Qdrant locally if you don't already have an instance:
 
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
-## Running it
+## Running the app
 
 ```bash
-# 1. Ingest all three tiers -> data/processed/{chunks,parents}_all.jsonl
-python cli.py ingest
-
-# 2. Embed + upsert into the hybrid Qdrant collection
-python cli.py embed
-
-# 3. Sanity-check retrieval quality against the gold set (dense vs. hybrid vs. hybrid+rerank)
-python cli.py retrieval-eval --k 5
-
-# 4. Calibrate the refusal threshold against the gold set (do this once)
-python cli.py calibrate
-
-# 5. Ask a question
-python cli.py ask "What are the warnings about CPU manager for k8s 1.26+?"
-
-# 6. Retrieval only, no generation (debugging)
-python cli.py retrieve "CPU manager warnings"
-
-# 7. Full RAGAS-style evaluation
-python cli.py eval
-
-# Or run the whole pipeline in one shot
-python cli.py all
+streamlit run app.py
 ```
 
-`eval` writes a timestamped JSON report to `data/eval_results/` with
-overall scores, a per-tier (`docs`/`policy`/`support`/`adversarial`)
-breakdown, and every individual judged sample.
+Streamlit will print a local URL (default `http://localhost:8501`) —
+open it in your browser. To bind to all interfaces (e.g. running inside
+a container or VM):
 
-## Key environment variables
+```bash
+streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+```
 
-| Variable | Default | Purpose |
+Check the sidebar for a **backend loaded** badge to confirm the backend
+modules imported successfully. A **backend import failed** badge means
+`app.py` isn't in the same directory as the backend modules, or a
+dependency is missing — expand the error message on any page for
+details.
+
+### First-time setup checklist
+
+1. ✅ Qdrant is running and reachable
+2. ✅ `OPENROUTER_API_KEY` is set
+3. ✅ Documents are ingested (**Document Ingestion** page, or the
+   existing `python cli.py ingest && python cli.py embed`)
+4. ✅ Ask a question on the **Ask DocuMind** page to confirm end-to-end
+   behavior
+
+## Project structure
+
+```
+DocuMind/
+├── app.py                  # Streamlit frontend (this app)
+├── config.py                # Settings — models, Qdrant, guardrails, paths
+├── embeddings.py             # Dense + sparse embeddings, Qdrant client/vector store
+├── ingestion.py               # Chunking pipeline for all three document tiers
+├── retrieval.py                # Hybrid search, RRF fusion, reranking, parent expansion
+├── generation.py                # Guardrails, LLM calls, inference logging, orchestration
+├── evaluation.py                 # RAGAS-style evaluation suite, threshold calibration
+├── data/
+│   ├── docs/                      # Raw Kubernetes docs (markdown)
+│   ├── filings/                   # Raw policy documents (markdown)
+│   ├── support_qa/                # Raw support tickets (JSONL)
+│   ├── processed/                 # Chunked output, parent sections, inference log DB
+│   ├── gold_eval/                 # Gold QA set for evaluation
+│   └── eval_results/               # Saved evaluation reports (JSON)
+└── requirements.txt
+```
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
 |---|---|---|
-| `OPENROUTER_API_KEY` | *(required)* | OpenRouter API key — no hardcoded fallback |
-| `DOCUMIND_GENERATOR_MODEL` | `deepseek/deepseek-chat-v3` | Generation model |
-| `DOCUMIND_JUDGE_MODEL` | `deepseek/deepseek-chat-v3` | RAGAS judge model |
-| `DOCUMIND_QDRANT_URL` | `http://localhost:6333` | Qdrant server URL |
-| `DOCUMIND_QDRANT_HYBRID_COLLECTION` | `documind_chunks_hybrid` | Hybrid collection name |
-| `DOCUMIND_SPARSE_MODEL` | `Qdrant/bm25` | Sparse embedding model |
-| `DOCUMIND_REFUSAL_THRESHOLD` | `-9.64` | Rerank-score floor before refusing (recalibrate per model/corpus) |
-| `DOCUMIND_RERANK_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder reranker |
-| `DOCUMIND_CHUNKS_PATH` | `data/processed/chunks_all.jsonl` | Ingested chunks |
-| `DOCUMIND_PARENTS_PATH` | `data/processed/parents_all.jsonl` | Parent-section lookup table |
-| `DOCUMIND_LOG_LEVEL` | `INFO` | Logging verbosity |
-| `DOCUMIND_ENABLE_TIMING` | `1` | Per-stage latency logging |
+| `RuntimeError: OPENROUTER_API_KEY is not set` | Env var not exported in this shell/session | `export OPENROUTER_API_KEY=...` before launching Streamlit |
+| Sidebar shows **backend import failed** | `app.py` not in the same folder as the backend modules, or a missing dependency | Confirm working directory; `pip install -r requirements.txt` |
+| Dashboard shows **Qdrant: Unreachable** | Qdrant isn't running, or `DOCUMIND_QDRANT_URL` is wrong | `docker run -p 6333:6333 qdrant/qdrant`; check the URL in **System Settings** |
+| `gio: http://localhost:8501: Operation not supported` on startup | Streamlit trying (and failing) to auto-open a browser in a headless/WSL environment | Harmless — open the printed URL manually in your browser |
+| Every question is refused as **out of scope** | No documents ingested yet, or scope keywords don't match your corpus | Run ingestion on the **Document Ingestion** page; check `SCOPE_KEYWORDS` in **System Settings** |
+| Every question is refused as **low confidence** | Refusal threshold too strict for your corpus/model | Run **Calibrate refusal threshold** on the **Evaluation Dashboard** |
 
-See `config.py` for the full list.
+## Security notes
 
-## Design decisions carried over unchanged
+- `OPENROUTER_API_KEY` is read from the environment only — never
+  hardcode it in `config.py` or commit it to version control.
+- The **Document Ingestion** page writes uploaded files directly to disk
+  and can trigger a full Qdrant collection rebuild — restrict access to
+  this page in any multi-user deployment.
+- Inference logs (including full prompts) are stored locally in SQLite
+  at `INFERENCE_LOG_DB_PATH` — treat this file as containing
+  potentially sensitive user queries.
 
-**Guardrails are two separate checks, not one.** Scope check runs
-*before* retrieval (cheap keyword match, embedding-centroid fallback only
-when needed). Refusal-on-low-confidence runs *after* retrieval, gated on
-the cross-encoder's top rerank score — a different signal (is this
-result set good enough) from scope (is this question even in our three
-domains at all).
-
-**RAGAS is reimplemented locally**, not the `ragas` pip package, since
-that package expects a LangChain-wrapped judge LLM tied closely to its
-own eval harness. `evaluation.py` implements the same four metric
-*definitions* directly against the configured judge model.
-
-**Adversarial gold-set rows are scored separately** as a
-`refusal_accuracy_on_adversarial_set` metric, since prompt-injection /
-out-of-scope / sensitive-data rows have no real reference answer to
-recall context against.
-
-**SQLite, not PostgreSQL, for `inference_logs`.** The project already
-avoids running Postgres (Qdrant was chosen over pgvector); a single
-SQLite file is sufficient at this project's request volume.
+  
