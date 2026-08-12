@@ -1,9 +1,13 @@
 """
-DocuMind — Enterprise RAG Platform · Streamlit Frontend (simplified)
-=====================================================================
-Two pages only:
-  1. Home   — project name, short description, eval score, Start Chat button
-  2. Chat   — ask anything, grounded answer with citations
+DocuMind — Enterprise RAG Platform · Streamlit Frontend
+========================================================
+Modern dark SaaS-style UI.
+
+Important:
+- Keeps the existing RAG backend.
+- Uses generation.handle_message() as the single backend entry point.
+- Conversation routing (NEW / FOLLOW-UP / ACK / GREETING / OFF-TOPIC)
+  is handled by generation.py.
 """
 
 from __future__ import annotations
@@ -16,39 +20,411 @@ from pathlib import Path
 
 import streamlit as st
 
+
 try:
     import config
     import generation
+
     BACKEND_IMPORT_ERROR = None
-except Exception as exc:  # pragma: no cover - surfaced in the UI instead
+except Exception as exc:  # pragma: no cover
     BACKEND_IMPORT_ERROR = exc
 
+
+# ---------------------------------------------------------------------------
+# Page configuration
+# ---------------------------------------------------------------------------
 
 st.set_page_config(
     page_title="DocuMind",
     page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
-CUSTOM_CSS = """
+
+# ---------------------------------------------------------------------------
+# Styling
+# ---------------------------------------------------------------------------
+
+CUSTOM_CSS = r"""
 <style>
-    .block-container { padding-top: 2rem; padding-bottom: 3rem; }
-    .citation-pill {
-        display: inline-block; background: #eef2ff; color: #3730a3;
-        border-radius: 6px; padding: 1px 8px; font-size: 0.78rem;
-        margin-right: 4px; font-family: monospace;
+/* ---------- Global ---------- */
+:root {
+    --bg: #09090f;
+    --panel: #10111a;
+    --panel-2: #141522;
+    --border: #25283a;
+    --text: #f4f4f7;
+    --muted: #9a9caf;
+    --accent: #7c5cff;
+    --accent-2: #5b4bdb;
+    --user: #211b3d;
+}
+
+.stApp {
+    background:
+        radial-gradient(circle at 50% -10%, rgba(124, 92, 255, 0.12), transparent 32%),
+        linear-gradient(180deg, #09090f 0%, #0a0b12 100%);
+    color: var(--text);
+}
+
+.block-container {
+    max-width: 1180px;
+    padding-top: 1.5rem;
+    padding-bottom: 7rem;
+}
+
+/* ---------- Sidebar ---------- */
+section[data-testid="stSidebar"] {
+    background: #0d0e15;
+    border-right: 1px solid var(--border);
+}
+
+section[data-testid="stSidebar"] > div {
+    padding-top: 1.1rem;
+}
+
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1.1rem;
+}
+
+.sidebar-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #7c5cff, #4d3bc7);
+    box-shadow: 0 8px 25px rgba(124, 92, 255, 0.25);
+    font-size: 19px;
+}
+
+.sidebar-title {
+    font-size: 1.05rem;
+    font-weight: 750;
+    color: #fff;
+}
+
+.sidebar-subtitle {
+    color: var(--muted);
+    font-size: 0.72rem;
+}
+
+.new-chat button {
+    border: 1px solid #5f4de0 !important;
+    background: rgba(124, 92, 255, 0.12) !important;
+    color: #eeeaff !important;
+    border-radius: 10px !important;
+}
+
+.history-label {
+    color: #77798c;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin: 1.2rem 0 .5rem;
+}
+
+/* ---------- Header ---------- */
+.chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: .3rem 0 1.5rem;
+}
+
+.chat-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.chat-logo {
+    width: 45px;
+    height: 45px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #7c5cff, #5140cf);
+    box-shadow: 0 10px 30px rgba(124, 92, 255, .22);
+    font-size: 22px;
+}
+
+.chat-title {
+    font-size: 1.45rem;
+    font-weight: 760;
+    line-height: 1.1;
+}
+
+.chat-subtitle {
+    color: var(--muted);
+    font-size: .78rem;
+    margin-top: 4px;
+}
+
+.status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #55d88a;
+    margin-right: 6px;
+}
+
+/* ---------- Empty state ---------- */
+.empty-state {
+    text-align: center;
+    padding: 8vh 1rem 5vh;
+}
+
+.empty-icon {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 18px;
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(124, 92, 255, .12);
+    border: 1px solid rgba(124, 92, 255, .25);
+    font-size: 32px;
+}
+
+.empty-title {
+    font-size: 1.55rem;
+    font-weight: 760;
+    margin-bottom: 7px;
+}
+
+.empty-subtitle {
+    color: var(--muted);
+    max-width: 570px;
+    margin: auto;
+    line-height: 1.6;
+}
+
+/* ---------- Messages ---------- */
+.message-row {
+    display: flex;
+    margin: 0 0 1.2rem;
+}
+
+.message-row.user {
+    justify-content: flex-end;
+}
+
+.message-row.assistant {
+    justify-content: flex-start;
+}
+
+.user-bubble {
+    max-width: 72%;
+    padding: 11px 15px;
+    border-radius: 17px 17px 5px 17px;
+    background: linear-gradient(135deg, #241d43, #1d1835);
+    border: 1px solid #3b3261;
+    color: #f5f2ff;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.assistant-card {
+    width: min(900px, 92%);
+    background: linear-gradient(180deg, rgba(18, 19, 29, .98), rgba(15, 16, 25, .98));
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 18px 20px 15px;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, .18);
+}
+
+.assistant-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: #ddd9ff;
+    font-size: .78rem;
+    font-weight: 650;
+    margin-bottom: 10px;
+}
+
+.assistant-avatar {
+    width: 27px;
+    height: 27px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(124, 92, 255, .16);
+    border: 1px solid rgba(124, 92, 255, .25);
+}
+
+.assistant-content {
+    color: #e9e9ef;
+    line-height: 1.68;
+}
+
+.assistant-content p:last-child {
+    margin-bottom: 0;
+}
+
+.meta-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 12px;
+    color: #707285;
+    font-size: .68rem;
+}
+
+.intent-badge {
+    padding: 3px 7px;
+    border-radius: 999px;
+    border: 1px solid #303246;
+    background: #151622;
+}
+
+/* ---------- Sources ---------- */
+div[data-testid="stExpander"] {
+    border: 1px solid #292c3d !important;
+    border-radius: 12px !important;
+    background: rgba(12, 13, 21, .7) !important;
+}
+
+.source-title {
+    color: #bcb8d8;
+    font-size: .78rem;
+    font-weight: 650;
+}
+
+.source-id {
+    color: #777a91;
+    font-family: monospace;
+    font-size: .68rem;
+}
+
+/* ---------- Code ---------- */
+pre {
+    border-radius: 12px !important;
+    border: 1px solid #292c3d !important;
+}
+
+/* ---------- Buttons ---------- */
+.stButton > button {
+    border-radius: 10px;
+    transition: .15s ease;
+}
+
+.stButton > button:hover {
+    border-color: #6653dc;
+}
+
+/* ---------- Chat input ---------- */
+div[data-testid="stChatInput"] {
+    background: #10111a;
+}
+
+div[data-testid="stChatInput"] textarea {
+    background: #11121c !important;
+    border: 1px solid #2b2e40 !important;
+    border-radius: 15px !important;
+    color: #f5f5f7 !important;
+}
+
+/* ---------- Home ---------- */
+.home-hero {
+    text-align: center;
+    padding: 8vh 1rem 4vh;
+}
+
+.home-logo {
+    width: 78px;
+    height: 78px;
+    margin: 0 auto 20px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #7c5cff, #4d3bc7);
+    box-shadow: 0 18px 45px rgba(124, 92, 255, .25);
+    font-size: 36px;
+}
+
+.home-title {
+    font-size: 2.7rem;
+    font-weight: 800;
+    letter-spacing: -.03em;
+}
+
+.home-subtitle {
+    color: var(--muted);
+    max-width: 650px;
+    margin: 10px auto 0;
+    font-size: 1rem;
+    line-height: 1.65;
+}
+
+.feature-card {
+    height: 100%;
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: rgba(17, 18, 27, .72);
+}
+
+.feature-icon {
+    font-size: 1.25rem;
+    margin-bottom: 8px;
+}
+
+.feature-title {
+    font-weight: 700;
+    margin-bottom: 5px;
+}
+
+.feature-text {
+    color: var(--muted);
+    font-size: .82rem;
+    line-height: 1.55;
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 700px) {
+    .block-container {
+        padding-left: .8rem;
+        padding-right: .8rem;
     }
-    .metric-caption { color: #6b7280; font-size: 0.8rem; }
+
+    .user-bubble,
+    .assistant-card {
+        max-width: 94%;
+        width: 94%;
+    }
+
+    .home-title {
+        font-size: 2.1rem;
+    }
+}
 </style>
 """
+
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
+# ---------------------------------------------------------------------------
+# Session state
+# ---------------------------------------------------------------------------
+
 def init_session_state() -> None:
     defaults = {
-        "chat_history": [],
         "page": "home",
+        "chat_history": [],
+        "chat_title": "New conversation",
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -57,39 +433,46 @@ def init_session_state() -> None:
 init_session_state()
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 @contextmanager
-def safe_run(spinner_text: str, success_text: str | None = None):
+def safe_run(spinner_text: str):
     placeholder = st.empty()
     try:
-        with placeholder, st.spinner(spinner_text):
-            yield True
-        if success_text:
-            st.toast(success_text, icon="✅")
+        with placeholder:
+            with st.spinner(spinner_text):
+                yield
     except Exception as exc:
-        st.error(f"**Something went wrong:** {exc}")
+        st.error("Something went wrong.")
         with st.expander("Technical details"):
             st.code(traceback.format_exc())
 
 
 def backend_ready() -> bool:
-    if BACKEND_IMPORT_ERROR is not None:
-        st.error("The backend modules could not be imported, so the app cannot run yet.")
-        with st.expander("Import error details"):
-            st.code(str(BACKEND_IMPORT_ERROR))
-        return False
-    return True
+    if BACKEND_IMPORT_ERROR is None:
+        return True
+
+    st.error("DocuMind backend could not be loaded.")
+    with st.expander("Technical details"):
+        st.code(str(BACKEND_IMPORT_ERROR))
+    return False
 
 
 def get_latest_eval_score():
-    """Return (score, source_label) for the latest available eval report, or (None, None)."""
+    """Return (score, source_label) for the latest evaluation report."""
     if not backend_ready():
         return None, None
+
     eval_dir = Path(config.EVAL_RESULTS_DIR)
     if not eval_dir.exists():
         return None, None
+
     report_files = sorted(eval_dir.glob("ragas_eval_*.json"), reverse=True)
     if not report_files:
         return None, None
+
     try:
         data = json.loads(report_files[0].read_text(encoding="utf-8"))
         score = data.get("overall", {}).get("faithfulness")
@@ -98,140 +481,436 @@ def get_latest_eval_score():
         return None, None
 
 
-# ===========================================================================
-# Page: Home
-# ===========================================================================
+def new_chat() -> None:
+    st.session_state.chat_history = []
+    st.session_state.chat_title = "New conversation"
+
+
+def recent_history_for_backend() -> list[dict]:
+    """
+    Convert UI state into the history format expected by generation.py.
+    Keep only successful turns because failed UI requests should not become
+    conversational context.
+    """
+    history = []
+
+    for turn in st.session_state.chat_history[-3:]:
+        if turn.get("error"):
+            continue
+
+        result = turn.get("result")
+        if result is None:
+            continue
+
+        history.append(
+            {
+                "question": turn["question"],
+                "answer": result.answer,
+            }
+        )
+
+    return history
+
+
+def intent_label(intent: str) -> str:
+    labels = {
+        "new_question": "RAG",
+        "follow_up": "Follow-up",
+        "ack": "Conversation",
+        "off_topic": "Out of scope",
+    }
+    return labels.get(intent or "", "Assistant")
+
+
+def render_sources(result) -> None:
+    """
+    Show only the chunks whose IDs were actually passed to the generator.
+    """
+    citations = getattr(result, "citations", None) or []
+    retrieved = getattr(result, "retrieved", None) or []
+
+    if not citations or not retrieved:
+        return
+
+    cited_ids = set(citations)
+    cited_chunks = [r for r in retrieved if r.chunk_id in cited_ids]
+
+    if not cited_chunks:
+        return
+
+    with st.expander(f"📚 Sources · {len(cited_chunks)}"):
+        for index, r in enumerate(cited_chunks, start=1):
+            citation = getattr(r, "citation", "Unknown source")
+            chunk_id = getattr(r, "chunk_id", "unknown")
+            text = getattr(r, "parent_text", None) or getattr(r, "text", "")
+
+            st.markdown(
+                f"""
+                <div class="source-title">
+                    {index}. {citation}
+                </div>
+                <div class="source-id">{chunk_id}</div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown(text)
+
+            if index != len(cited_chunks):
+                st.divider()
+
+
+def render_user_message(question: str) -> None:
+    st.markdown(
+        f"""
+        <div class="message-row user">
+            <div class="user-bubble">{question}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_assistant_result(result, show_actions: bool = True) -> None:
+    answer = getattr(result, "answer", "") or ""
+    intent = getattr(result, "intent", "new_question")
+    used_rag = bool(getattr(result, "used_rag", False))
+    refused = bool(getattr(result, "refused", False))
+
+    st.markdown(
+        """
+        <div class="message-row assistant">
+            <div class="assistant-card">
+                <div class="assistant-head">
+                    <div class="assistant-avatar">🧠</div>
+                    <span>DocuMind</span>
+                </div>
+                <div class="assistant-content">
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Markdown belongs inside the same visual card.
+    if refused:
+        st.warning(answer)
+    else:
+        st.markdown(answer)
+
+    st.markdown(
+        f"""
+                </div>
+                <div class="meta-row">
+                    <span class="intent-badge">{intent_label(intent)}</span>
+                    {"<span>grounded in knowledge base</span>" if used_rag else "<span>conversation only</span>"}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    render_sources(result)
+
+    if show_actions and answer:
+        cols = st.columns([1, 1, 1, 8])
+
+        with cols[0]:
+            if st.button("📋", key=f"copy_{id(result)}", help="Copy answer"):
+                # Streamlit's native clipboard support differs by version.
+                # Keep this lightweight: the browser can still copy from the
+                # rendered Markdown. This button is intentionally non-invasive.
+                st.toast("Select the answer text and copy it.", icon="📋")
+
+        with cols[1]:
+            if st.button("👍", key=f"up_{id(result)}", help="Helpful"):
+                st.toast("Thanks for the feedback!", icon="👍")
+
+        with cols[2]:
+            if st.button("👎", key=f"down_{id(result)}", help="Not helpful"):
+                st.toast("Thanks — we'll use that feedback.", icon="👎")
+
+
+def render_error(turn: dict) -> None:
+    st.markdown(
+        """
+        <div class="message-row assistant">
+            <div class="assistant-card">
+                <div class="assistant-head">
+                    <div class="assistant-avatar">🧠</div>
+                    <span>DocuMind</span>
+                </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.error(turn.get("error", "Unknown error"))
+    with st.expander("Technical details"):
+        st.code(turn.get("traceback", ""))
+    st.markdown("</div></div>", unsafe_allow_html=True)
+
+
+def conversation_title() -> str:
+    history = st.session_state.chat_history
+    if not history:
+        return "New conversation"
+
+    first_question = history[0].get("question", "").strip()
+    if not first_question:
+        return "New conversation"
+
+    # Short title for sidebar.
+    title = " ".join(first_question.split())
+    return title[:34] + ("…" if len(title) > 34 else "")
+
+
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
+
+def render_sidebar() -> None:
+    with st.sidebar:
+        st.markdown(
+            """
+            <div class="sidebar-brand">
+                <div class="sidebar-logo">🧠</div>
+                <div>
+                    <div class="sidebar-title">DocuMind</div>
+                    <div class="sidebar-subtitle">Enterprise knowledge assistant</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown('<div class="new-chat">', unsafe_allow_html=True)
+        if st.button("＋  New Chat", use_container_width=True, type="primary"):
+            new_chat()
+            st.session_state.page = "chat"
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown('<div class="history-label">Conversation</div>', unsafe_allow_html=True)
+
+        if st.session_state.chat_history:
+            st.caption(conversation_title())
+
+            if st.button("🗑️  Clear conversation", use_container_width=True):
+                new_chat()
+                st.rerun()
+        else:
+            st.caption("No messages yet")
+
+        st.divider()
+
+        st.markdown("**Supported knowledge**")
+        st.caption("Kubernetes · Company policies · Support topics")
+
+        if st.session_state.page == "chat":
+            if st.button("⌂  Home", use_container_width=True):
+                st.session_state.page = "home"
+                st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Home
+# ---------------------------------------------------------------------------
 
 def page_home() -> None:
     st.markdown(
-        "<h1 style='text-align:center; margin-top: 3rem;'>🧠 DocuMind</h1>",
+        """
+        <div class="home-hero">
+            <div class="home-logo">🧠</div>
+            <div class="home-title">DocuMind</div>
+            <div class="home-subtitle">
+                A grounded enterprise AI assistant that answers questions
+                from your internal knowledge base instead of making things up.
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
-    st.markdown(
-        "<p style='text-align:center; font-size: 1.1rem; color:#6b7280;'>"
-        "Ask anything and get a grounded, easy-to-read answer — powered by "
-        "retrieval over your documents."
-        "</p>",
-        unsafe_allow_html=True,
-    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(
+            """
+            <div class="feature-card">
+                <div class="feature-icon">🔎</div>
+                <div class="feature-title">Grounded answers</div>
+                <div class="feature-text">
+                    Answers are generated from retrieved knowledge-base content.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with col2:
+        st.markdown(
+            """
+            <div class="feature-card">
+                <div class="feature-icon">💬</div>
+                <div class="feature-title">Conversational</div>
+                <div class="feature-text">
+                    Follow-ups can reuse the conversation without unnecessarily
+                    running retrieval again.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with col3:
+        st.markdown(
+            """
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <div class="feature-title">Guarded</div>
+                <div class="feature-text">
+                    Unsupported or low-confidence questions are refused instead
+                    of being answered with invented facts.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     st.write("")
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
+    score, source = get_latest_eval_score()
+
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
         with st.container(border=True):
-            st.markdown("**📊 Eval set score**")
-            score, source = get_latest_eval_score()
+            st.markdown("### 📊 Latest evaluation")
+
             if score is not None:
                 st.metric("Faithfulness", f"{score:.2f}")
-                st.caption(f"Source: {source}")
+                st.caption(source)
             else:
-                st.info("No evaluation report found yet.")
+                st.caption("No evaluation report found yet.")
 
-        st.write("")
-        if st.button("💬 Start Chat", type="primary", use_container_width=True):
-            st.session_state.page = "chat"
-            st.rerun()
+            st.write("")
+            if st.button(
+                "💬  Start Chat",
+                type="primary",
+                use_container_width=True,
+            ):
+                st.session_state.page = "chat"
+                st.rerun()
 
 
-# ===========================================================================
-# Page: Chat
-# ===========================================================================
-
-def render_ref_expander(result) -> None:
-    """Show only the paragraphs actually used to generate the answer."""
-    if not (getattr(result, "citations", None) and getattr(result, "retrieved", None)):
-        return
-    cited_ids = set(result.citations)
-    cited_chunks = [r for r in result.retrieved if r.chunk_id in cited_ids]
-    if not cited_chunks:
-        return
-    with st.expander(f"ref ({len(cited_chunks)})"):
-        for r in cited_chunks:
-            st.markdown(f"**{getattr(r, 'citation', 'unknown source')}** · `{r.chunk_id}`")
-            st.write(getattr(r, "parent_text", None) or getattr(r, "text", ""))
-            st.divider()
-
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
 
 def page_chat() -> None:
-    top = st.columns([1, 6])
-    with top[0]:
-        if st.button("← Home"):
-            st.session_state.page = "home"
-            st.rerun()
-    with top[1]:
-        st.title("💬 Ask DocuMind")
+    st.markdown(
+        """
+        <div class="chat-header">
+            <div class="chat-brand">
+                <div class="chat-logo">🧠</div>
+                <div>
+                    <div class="chat-title">DocuMind</div>
+                    <div class="chat-subtitle">
+                        <span class="status-dot"></span>
+                        Grounded enterprise assistant
+                    </div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if not backend_ready():
         return
 
-    # Render existing conversation, oldest first, in real chat bubbles.
+    if not st.session_state.chat_history:
+        st.markdown(
+            """
+            <div class="empty-state">
+                <div class="empty-icon">✦</div>
+                <div class="empty-title">How can I help?</div>
+                <div class="empty-subtitle">
+                    Ask about Kubernetes, company policies, subscriptions,
+                    accounts, support topics, or anything else contained in
+                    the DocuMind knowledge base.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # Existing conversation.
     for turn in st.session_state.chat_history:
-        with st.chat_message("user"):
-            st.write(turn["question"])
-        with st.chat_message("assistant"):
-            if turn.get("error"):
-                st.error(f"**Something went wrong:** {turn['error']}")
-                with st.expander("Technical details"):
-                    st.code(turn.get("traceback", ""))
-            else:
-                st.write(turn["result"].answer)
-                render_ref_expander(turn["result"])
+        render_user_message(turn["question"])
 
-    # Chat input pinned at the bottom -- the natural chat UX.
-    question = st.chat_input("Ask anything...")
+        if turn.get("error"):
+            render_error(turn)
+        else:
+            render_assistant_result(turn["result"], show_actions=False)
 
-    if question and question.strip():
-        with st.chat_message("user"):
-            st.write(question)
+    # Composer.
+    question = st.chat_input("Message DocuMind…")
 
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                try:
-                    t0 = time.time()
-                    # Pass recent turns so follow-up questions ("what about
-                    # X instead?") are understandable -- answers still stay
-                    # grounded in retrieved context, not prior answers.
-                    recent_history = [
-                        {"question": t["question"], "answer": t["result"].answer}
-                        for t in st.session_state.chat_history[-3:]
-                        if not t.get("error")
-                    ]
-                    result = generation.answer_question(
-                        question, top_k=5, log_to_db=True, history=recent_history
-                    )
-                    st.session_state.chat_history.append(
-                        {
-                            "question": question,
-                            "result": result,
-                            "wall_time": time.time() - t0,
-                        }
-                    )
-                    st.write(result.answer)
-                    render_ref_expander(result)
-                except Exception as exc:
-                    st.error(f"**Something went wrong:** {exc}")
-                    tb = traceback.format_exc()
-                    with st.expander("Technical details"):
-                        st.code(tb)
-                    st.session_state.chat_history.append(
-                        {
-                            "question": question,
-                            "error": str(exc),
-                            "traceback": tb,
-                        }
-                    )
+    if not question or not question.strip():
+        return
 
-    if st.session_state.chat_history:
-        if st.button("Clear conversation"):
-            st.session_state.chat_history = []
+    question = question.strip()
+
+    render_user_message(question)
+
+    # Use the NEW router entry point, not answer_question().
+    with st.spinner("DocuMind is thinking…"):
+        try:
+            t0 = time.perf_counter()
+
+            recent_history = recent_history_for_backend()
+
+            result = generation.handle_message(
+                question=question,
+                history=recent_history,
+                top_k=5,
+                log_to_db=True,
+            )
+
+            elapsed = time.perf_counter() - t0
+
+            st.session_state.chat_history.append(
+                {
+                    "question": question,
+                    "result": result,
+                    "wall_time": elapsed,
+                }
+            )
+
+            render_assistant_result(result, show_actions=True)
+
+            # Rerun so the newly added turn becomes part of the stable
+            # conversation rendered on the next Streamlit execution.
+            # This also keeps Streamlit's state predictable.
             st.rerun()
 
+        except Exception as exc:
+            tb = traceback.format_exc()
 
-# ===========================================================================
+            st.session_state.chat_history.append(
+                {
+                    "question": question,
+                    "error": str(exc),
+                    "traceback": tb,
+                }
+            )
+
+            render_error(st.session_state.chat_history[-1])
+
+
+# ---------------------------------------------------------------------------
 # Router
-# ===========================================================================
+# ---------------------------------------------------------------------------
 
 def main() -> None:
+    render_sidebar()
+
     if st.session_state.page == "chat":
         page_chat()
     else:

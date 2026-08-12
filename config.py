@@ -62,10 +62,14 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 GENERATOR_MODEL = os.environ.get("DOCUMIND_GENERATOR_MODEL", "deepseek/deepseek-chat-v3")
 JUDGE_MODEL = os.environ.get("DOCUMIND_JUDGE_MODEL", "deepseek/deepseek-chat-v3")
+# Intent router (new question / follow-up / ack / greeting / off-topic).
+# Defaults to the same model as generation -- override independently if you
+# want a cheaper/faster model just for routing.
+ROUTER_MODEL = os.environ.get("DOCUMIND_ROUTER_MODEL", GENERATOR_MODEL)
 GENERATION_TEMPERATURE = 0.1
 JUDGE_TEMPERATURE = 0.0
 GENERATION_MAX_TOKENS = 6000
-LLM_TIMEOUT_S = 600
+LLM_TIMEOUT_S = 60
 
 # Refusal 
 REFUSAL_RERANK_THRESHOLD = float(os.environ.get("DOCUMIND_REFUSAL_THRESHOLD", "-9.64"))
