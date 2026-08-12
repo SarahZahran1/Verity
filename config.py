@@ -4,7 +4,7 @@ import os
 
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 EMBEDDING_DIM = 768
-EMBEDDING_DEVICE = os.environ.get("DOCUMIND_EMBEDDING_DEVICE", "cpu")
+EMBEDDING_DEVICE = os.environ.get("DOCUMIND_EMBEDDING_DEVICE", "cuda")
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 
 # Paths 
@@ -64,13 +64,19 @@ GENERATOR_MODEL = os.environ.get("DOCUMIND_GENERATOR_MODEL", "deepseek/deepseek-
 JUDGE_MODEL = os.environ.get("DOCUMIND_JUDGE_MODEL", "deepseek/deepseek-chat-v3")
 GENERATION_TEMPERATURE = 0.1
 JUDGE_TEMPERATURE = 0.0
-GENERATION_MAX_TOKENS = 1536
+GENERATION_MAX_TOKENS = 6000
 LLM_TIMEOUT_S = 600
 
 # Refusal 
 REFUSAL_RERANK_THRESHOLD = float(os.environ.get("DOCUMIND_REFUSAL_THRESHOLD", "-9.64"))
 
-REFUSAL_MESSAGE = "I don't have information on that in the knowledge base."
+REFUSAL_MESSAGE = (
+    "I looked, but I couldn't find anything in the knowledge base that "
+    "answers this specifically. The knowledge base covers Kubernetes "
+    "documentation, company policies, and support tickets — if your "
+    "question fits one of those areas, try rephrasing it or adding a bit "
+    "more detail and I'll take another look."
+)
 
 # Scope
 SCOPE_KEYWORDS = {
@@ -98,8 +104,9 @@ SCOPE_KEYWORDS = {
 SCOPE_EMBEDDING_THRESHOLD = 0.25
 
 OUT_OF_SCOPE_MESSAGE = (
-    "That question is outside DocuMind's supported domains "
-    "(Kubernetes documentation, company policy documents, and support tickets)."
+    "That's outside what I can help with here — I'm scoped to Kubernetes "
+    "documentation, company policy documents, and support tickets. Feel "
+    "free to ask me something in one of those areas!"
 )
 
 # Logging
