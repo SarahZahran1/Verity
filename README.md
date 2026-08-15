@@ -1,10 +1,8 @@
-# Verity — Grounded Enterprise RAG Platform
+# Verity Grounded Enterprise RAG Platform
 
-Verity is a Retrieval-Augmented Generation platform that answers questions strictly from an internal knowledge base — Kubernetes documentation, company policies, and IT support Q&A — instead of relying on the LLM's own knowledge. Every answer is grounded in retrieved passages, with guardrails that refuse rather than guess when a question is out of scope or the retrieved context is weak. The conversational interface is one part of the system, not the whole of it.
+Verity is a Retrieval-Augmented Generation platform that answers questions strictly from an internal knowledge base , Kubernetes documentation, company policies, and IT support Q&A .instead of relying on the LLM's own knowledge. Every answer is grounded in retrieved passages, with guardrails that refuse rather than guess when a question is out of scope or the retrieved context is weak. The conversational interface is one part of the system, not the whole of it.
 
 ## Demo
-
-
 
 https://github.com/user-attachments/assets/9b29cd68-165a-4e1b-85f9-c1cbbd5149a2
 
@@ -13,12 +11,12 @@ https://github.com/user-attachments/assets/9b29cd68-165a-4e1b-85f9-c1cbbd5149a2
 
 Enterprises need internal assistants that don't hallucinate policy details or technical facts. Verity addresses this with:
 
-- **Hybrid retrieval** — dense (BGE) + sparse (BM25) search fused with Reciprocal Rank Fusion, followed by cross-encoder reranking.
-- **Guardrails** — a pre-retrieval scope check refuses off-topic questions before any retrieval runs; a post-retrieval confidence threshold on the rerank score refuses when retrieved context is weak.
-- **Conversational routing** — an intent classifier distinguishes new questions, follow-ups, acknowledgements, and off-topic messages, so the full RAG pipeline only runs when it's actually needed.
-- **Grounded generation** — the LLM is prompted to answer only from retrieved context, ignore instructions embedded in documents, and say what's missing rather than invent an answer.
-- **Evaluation** — a RAGAS-style LLM-judge harness scores faithfulness, answer relevance, context precision, and context recall against a hand-built gold Q&A set, plus a separate retrieval-only recall/MRR benchmark.
-- **Two interfaces** — a Streamlit chat UI and a FastAPI backend, with Streamlit calling the API over HTTP instead of importing the pipeline directly.
+- **Hybrid retrieval** : dense (BGE) + sparse (BM25) search fused with Reciprocal Rank Fusion, followed by cross-encoder reranking.
+- **Guardrails**: a pre-retrieval scope check refuses off-topic questions before any retrieval runs; a post-retrieval confidence threshold on the rerank score refuses when retrieved context is weak.
+- **Conversational routing**:  an intent classifier distinguishes new questions, follow-ups, acknowledgements, and off-topic messages, so the full RAG pipeline only runs when it's actually needed.
+- **Grounded generation** : the LLM is prompted to answer only from retrieved context, ignore instructions embedded in documents, and say what's missing rather than invent an answer.
+- **Evaluation** :  a RAGAS-style LLM-judge harness scores faithfulness, answer relevance, context precision, and context recall against a hand-built gold Q&A set, plus a separate retrieval-only recall/MRR benchmark.
+- **Two interfaces** :  a Streamlit chat UI and a FastAPI backend, with Streamlit calling the API over HTTP instead of importing the pipeline directly.
 
 ## Architecture
 
@@ -49,8 +47,8 @@ For multi-turn chat, an LLM-based intent router first classifies the message as 
 ## Knowledge Base
 
 Three tiers, each chunked differently:
-- **Kubernetes docs** — Hugo/Markdown source, recursively split H2 → H3 → H4, with parent-child linkage for context expansion.
-- **Company policies** — plain Markdown, H2-section chunking.
+- **Kubernetes docs** : Hugo/Markdown source, recursively split H2 → H3 → H4, with parent-child linkage for context expansion.
+- **Company policies** : plain Markdown, H2-section chunking.
 - **Support Q&A** — JSONL, one chunk per Q&A pair.
 
 ## Retrieval & Reranking
