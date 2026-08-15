@@ -59,6 +59,8 @@ Dense (`BAAI/bge-base-en-v1.5`) and sparse (`Qdrant/bm25`) vectors are stored to
 
 A RAGAS-style harness runs the full pipeline against a gold Q&A set and judges each answer with an LLM on faithfulness, answer relevance, context precision, and context recall, plus refusal accuracy on adversarial/out-of-scope questions. Reports are saved as timestamped JSON and surfaced on the Streamlit home page. The refusal threshold itself is calibrated with a dedicated sweep against the gold set's adversarial and valid questions.
 
+<img width="936" height="837" alt="home" src="https://github.com/user-attachments/assets/8e98477b-b2d5-44d8-80ff-4c2aa0d4758d" />
+
 ## Tech Stack
 
 | Layer | Technology |
