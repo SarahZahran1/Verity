@@ -84,7 +84,7 @@ def build_generation_prompt(
     history_block = ""
     if history:
         turns = []
-        for turn in history[-3:]:
+        for turn in history[-4:]:
             q = turn.get("question", "").strip()
             a = turn.get("answer", "").strip()
             if q and a:
@@ -107,40 +107,135 @@ def build_generation_prompt(
 # directly with a friendly canned reply instead.
 
 _CHITCHAT_PATTERNS: list[tuple[re.Pattern, str]] = [
+    # Greetings
     (
-        re.compile(r"^\s*(hi|hii+|hello+|hey+|hiya|yo|greetings|salam|hola)[\s!.,]*$", re.IGNORECASE),
-        "Hey there! I'm DocuMind -- ask me anything about our Kubernetes "
-        "docs, company policies, or support topics and I'll dig up the "
-        "answer for you.",
+        re.compile(
+            r"^\s*(hi+|hii+|hiii+|hello+|hallo+|helo+|helllo+|"
+            r"hey+|heyy+|heyyy+|hiya+|yo+|greetings+|howdy+|"
+            r"sup+|sups+|wassup+|whatsup+|what's\s+up|"
+            r"good\s*(morning|mornin+)|morning|"
+            r"good\s*(afternoon|afternooon)|afternoon|"
+            r"good\s*(evening|evenin+)|evening|"
+            r"salut|salam|salaam|assalam\s*ualaikum|"
+            r"assalamu\s*alaikum|hola|bonjour|ciao|namaste)"
+            r"[\s!.,?]*$",
+            re.IGNORECASE,
+        ),
+        "Hey there! I'm your assistant, ask me anything about our "
+        "Kubernetes docs, company policies, or support topics and I'll "
+        "dig up the answer for you.",
     ),
+
+    # How are you / casual check-in
     (
-        re.compile(r"^\s*(good\s?morning|good\s?afternoon|good\s?evening)[\s!.,]*$", re.IGNORECASE),
-        "Hey! Good to see you. What can I help you find today -- "
-        "Kubernetes docs, a company policy, or something from support?",
-    ),
-    (
-        re.compile(r"\b(how are you|how's it going|how are u|hows it going)\b", re.IGNORECASE),
+        re.compile(
+            r"^\s*(how\s+are\s+you|how\s+r\s+you|how\s+are\s+u|"
+            r"how\s+r\s+u|hru|how're\s+you|"
+            r"how's\s+it\s+going|hows\s+it\s+going|"
+            r"how\s+is\s+it\s+going|"
+            r"how\s+you\s+doing|how\s+u\s+doing|"
+            r"how\s+are\s+things|how\s+r\s+things|"
+            r"how\s+have\s+you\s+been|"
+            r"you\s+good|u\s+good|everything\s+good)"
+            r"[\s!.,?]*$",
+            re.IGNORECASE,
+        ),
         "I'm doing well, thanks for asking! What can I help you with -- "
         "Kubernetes docs, company policy, or support questions?",
     ),
+
+    # Who are you / capabilities
     (
-        re.compile(r"^\s*(who are you|what are you|what can you do|what do you do)[\s?!.]*$", re.IGNORECASE),
+        re.compile(
+            r"^\s*(who\s+are\s+you|who\s+r\s+you|who\s+r\s+u|"
+            r"what\s+are\s+you|what\s+r\s+you|"
+            r"what\s+can\s+you\s+do|what\s+do\s+you\s+do|"
+            r"what\s+is\s+documind|what's\s+documind|"
+            r"tell\s+me\s+about\s+yourself|"
+            r"introduce\s+yourself|"
+            r"what\s+are\s+your\s+capabilities)"
+            r"[\s!.,?]*$",
+            re.IGNORECASE,
+        ),
         "I'm DocuMind, your internal knowledge assistant. I can answer "
         "questions grounded in our Kubernetes documentation, company "
         "policies, and support tickets -- just ask away.",
     ),
+
+    # Thanks
     (
-        re.compile(r"^\s*(thanks|thank you|thx|ty|appreciate it|cheers)[\s!.,]*$", re.IGNORECASE),
+        re.compile(
+            r"^\s*(thanks+|thank\s+you|thank\s+u|thx+|tx+|"
+            r"ty|tysm|tysm|thanks\s+a\s+lot|"
+            r"thank\s+you\s+so\s+much|"
+            r"much\s+appreciated|appreciate\s+it|"
+            r"really\s+appreciate\s+it|cheers)"
+            r"[\s!.,?]*$",
+            re.IGNORECASE,
+        ),
         "You're welcome! Let me know if there's anything else you'd like "
         "to look up.",
     ),
+
+    # You're welcome / acknowledgements
     (
-        re.compile(r"^\s*(bye|goodbye|see ya|see you|later|farewell)[\s!.,]*$", re.IGNORECASE),
+        re.compile(
+            r"^\s*(you're\s+welcome|youre\s+welcome|"
+            r"ur\s+welcome|no\s+problem|no\s+worries|"
+            r"np|anytime|sure|sure\s+thing|of\s+course)"
+            r"[\s!.,?]*$",
+            re.IGNORECASE,
+        ),
+        "Anytime! 😊",
+    ),
+
+    # Bye / farewell
+    (
+        re.compile(
+            r"^\s*(bye+|byee+|goodbye+|good\s+bye|"
+            r"see\s+ya|see\s+you|see\s+you\s+later|"
+            r"talk\s+to\s+you\s+later|ttyl|later|"
+            r"take\s+care|farewell|cya|cu|"
+            r"have\s+a\s+good\s+day|have\s+a\s+nice\s+day|"
+            r"good\s+night|night|gn)"
+            r"[\s!.,?]*$",
+            re.IGNORECASE,
+        ),
         "Take care! Come back anytime you've got another question.",
     ),
+
+    # Simple acknowledgements
+    (
+        re.compile(
+            r"^\s*(ok+|okay+|k|kk|k+|got\s+it|gotcha|"
+            r"understood|i\s+understand|makes\s+sense|"
+            r"that\s+makes\s+sense|alright|all\s+right|"
+            r"right|yep+|yup+|yeah|yes|y|"
+            r"nope|nah|cool|nice|great|awesome|perfect|"
+            r"exactly|true|fair\s+enough)"
+            r"[\s!.,?]*$",
+            re.IGNORECASE,
+        ),
+        "Got it! 😊",
+    ),
+
+    # Positive reactions / casual small talk
+    (
+        re.compile(
+            r"^\s*(nice\s+to\s+meet\s+you|"
+            r"good\s+to\s+see\s+you|"
+            r"glad\s+to\s+see\s+you|"
+            r"how's\s+your\s+day|"
+            r"hows\s+your\s+day|"
+            r"what's\s+new|"
+            r"whats\s+new|"
+            r"anything\s+new)"
+            r"[\s!.,?]*$",
+            re.IGNORECASE,
+        ),
+        "I'm here and ready to help! What would you like to look up?",
+    ),
 ]
-
-
 def detect_chitchat(question: str) -> str | None:
     """Return a canned reply if the message is small talk, else None."""
     q = question.strip()
@@ -215,12 +310,7 @@ def _format_history_block(history: list[dict] | None, label: str = "RECENT CONVE
 
 
 def classify_intent(question: str, history: list[dict] | None) -> dict:
-    """Returns {"intent": one of _VALID_INTENTS, "reply": str | None}.
-
-    Fails open to "new_question" on any error -- if the router breaks, the
-    worst case is an unnecessary-but-safe RAG lookup, never a silently
-    dropped real question.
-    """
+    
     prompt = f"{_format_history_block(history)}NEW MESSAGE: {question}"
     try:
         llm = _make_llm(config.GENERATOR_MODEL, 0.0)

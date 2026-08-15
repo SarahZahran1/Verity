@@ -1,14 +1,4 @@
-"""
-DocuMind — Enterprise RAG Platform · Streamlit Frontend
-========================================================
-Modern dark SaaS-style UI.
 
-Important:
-- Keeps the existing RAG backend.
-- Uses generation.handle_message() as the single backend entry point.
-- Conversation routing (NEW / FOLLOW-UP / ACK / GREETING / OFF-TOPIC)
-  is handled by generation.py.
-"""
 
 from __future__ import annotations
 
@@ -29,22 +19,12 @@ try:
 except Exception as exc:  # pragma: no cover
     BACKEND_IMPORT_ERROR = exc
 
-
-# ---------------------------------------------------------------------------
-# Page configuration
-# ---------------------------------------------------------------------------
-
 st.set_page_config(
-    page_title="DocuMind",
-    page_icon="🧠",
+    page_title="Verity",
+    page_icon="V",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-
-# ---------------------------------------------------------------------------
-# Styling
-# ---------------------------------------------------------------------------
 
 CUSTOM_CSS = r"""
 <style>
@@ -100,7 +80,10 @@ section[data-testid="stSidebar"] > div {
     justify-content: center;
     background: linear-gradient(135deg, #7c5cff, #4d3bc7);
     box-shadow: 0 8px 25px rgba(124, 92, 255, 0.25);
-    font-size: 19px;
+    font-size: 16px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -.02em;
 }
 
 .sidebar-title {
@@ -152,7 +135,10 @@ section[data-testid="stSidebar"] > div {
     justify-content: center;
     background: linear-gradient(135deg, #7c5cff, #5140cf);
     box-shadow: 0 10px 30px rgba(124, 92, 255, .22);
-    font-size: 22px;
+    font-size: 19px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -.02em;
 }
 
 .chat-title {
@@ -183,16 +169,19 @@ section[data-testid="stSidebar"] > div {
 }
 
 .empty-icon {
-    width: 72px;
-    height: 72px;
+    width: 56px;
+    height: 56px;
     margin: 0 auto 18px;
-    border-radius: 22px;
+    border-radius: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(124, 92, 255, .12);
     border: 1px solid rgba(124, 92, 255, .25);
-    font-size: 32px;
+    font-size: 20px;
+    font-weight: 800;
+    color: #c9bfff;
+    letter-spacing: -.02em;
 }
 
 .empty-title {
@@ -254,14 +243,17 @@ section[data-testid="stSidebar"] > div {
 }
 
 .assistant-avatar {
-    width: 27px;
-    height: 27px;
-    border-radius: 9px;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(124, 92, 255, .16);
     border: 1px solid rgba(124, 92, 255, .25);
+    font-size: 11px;
+    font-weight: 800;
+    color: #c9bfff;
 }
 
 .assistant-content {
@@ -352,7 +344,10 @@ div[data-testid="stChatInput"] textarea {
     justify-content: center;
     background: linear-gradient(135deg, #7c5cff, #4d3bc7);
     box-shadow: 0 18px 45px rgba(124, 92, 255, .25);
-    font-size: 36px;
+    font-size: 32px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -.02em;
 }
 
 .home-title {
@@ -371,26 +366,23 @@ div[data-testid="stChatInput"] textarea {
 
 .feature-card {
     height: 100%;
-    padding: 18px;
-    border-radius: 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
     border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
     background: rgba(17, 18, 27, .72);
-}
-
-.feature-icon {
-    font-size: 1.25rem;
-    margin-bottom: 8px;
 }
 
 .feature-title {
     font-weight: 700;
-    margin-bottom: 5px;
+    font-size: .84rem;
+    margin-bottom: 1px;
 }
 
 .feature-text {
     color: var(--muted);
-    font-size: .82rem;
-    line-height: 1.55;
+    font-size: .72rem;
+    line-height: 1.4;
 }
 
 /* ---------- Mobile ---------- */
@@ -416,9 +408,6 @@ div[data-testid="stChatInput"] textarea {
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
-# Session state
-# ---------------------------------------------------------------------------
 
 def init_session_state() -> None:
     defaults = {
@@ -432,10 +421,6 @@ def init_session_state() -> None:
 
 init_session_state()
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 @contextmanager
 def safe_run(spinner_text: str):
@@ -454,14 +439,52 @@ def backend_ready() -> bool:
     if BACKEND_IMPORT_ERROR is None:
         return True
 
-    st.error("DocuMind backend could not be loaded.")
+    st.error("Verity backend could not be loaded.")
     with st.expander("Technical details"):
         st.code(str(BACKEND_IMPORT_ERROR))
     return False
 
 
-def get_latest_eval_score():
-    """Return (score, source_label) for the latest evaluation report."""
+EVAL_METRIC_INFO = {
+    "faithfulness": {
+        "label": "Faithfulness",
+        "help": (
+            "Of the claims made in the generated answer, what fraction is "
+            "actually supported by the retrieved context? A low score means "
+            "the model is hallucinating — saying things the source documents "
+            "don't back up."
+        ),
+    },
+    "answer_relevance": {
+        "label": "Answer Relevance",
+        "help": (
+            "Does the answer actually address what was asked? Measured by "
+            "how well the answer's content maps back to the original "
+            "question — a technically correct but off-target answer scores "
+            "lower here."
+        ),
+    },
+    "context_precision": {
+        "label": "Context Precision",
+        "help": (
+            "Of the chunks retrieved from the knowledge base, what fraction "
+            "were actually relevant and ranked appropriately? A low score "
+            "means retrieval is pulling in noisy or irrelevant chunks."
+        ),
+    },
+    "context_recall": {
+        "label": "Context Recall",
+        "help": (
+            "Of everything needed to answer the question, how much did "
+            "retrieval actually surface? A low score means relevant "
+            "information exists in the knowledge base but retrieval missed it."
+        ),
+    },
+}
+
+
+def get_latest_eval_report():
+    """Return (eval_data: dict, filename: str) for the latest evaluation report."""
     if not backend_ready():
         return None, None
 
@@ -475,8 +498,7 @@ def get_latest_eval_score():
 
     try:
         data = json.loads(report_files[0].read_text(encoding="utf-8"))
-        score = data.get("overall", {}).get("faithfulness")
-        return score, report_files[0].name
+        return data, report_files[0].name
     except Exception:
         return None, None
 
@@ -494,7 +516,7 @@ def recent_history_for_backend() -> list[dict]:
     """
     history = []
 
-    for turn in st.session_state.chat_history[-3:]:
+    for turn in st.session_state.chat_history[-4:]:
         if turn.get("error"):
             continue
 
@@ -523,9 +545,7 @@ def intent_label(intent: str) -> str:
 
 
 def render_sources(result) -> None:
-    """
-    Show only the chunks whose IDs were actually passed to the generator.
-    """
+   
     citations = getattr(result, "citations", None) or []
     retrieved = getattr(result, "retrieved", None) or []
 
@@ -538,7 +558,7 @@ def render_sources(result) -> None:
     if not cited_chunks:
         return
 
-    with st.expander(f"📚 Sources · {len(cited_chunks)}"):
+    with st.expander(f"Sources · {len(cited_chunks)}"):
         for index, r in enumerate(cited_chunks, start=1):
             citation = getattr(r, "citation", "Unknown source")
             chunk_id = getattr(r, "chunk_id", "unknown")
@@ -581,8 +601,8 @@ def render_assistant_result(result, show_actions: bool = True) -> None:
         <div class="message-row assistant">
             <div class="assistant-card">
                 <div class="assistant-head">
-                    <div class="assistant-avatar">🧠</div>
-                    <span>DocuMind</span>
+                    <div class="assistant-avatar">V</div>
+                    <span>Verity</span>
                 </div>
                 <div class="assistant-content">
         """,
@@ -614,19 +634,19 @@ def render_assistant_result(result, show_actions: bool = True) -> None:
         cols = st.columns([1, 1, 1, 8])
 
         with cols[0]:
-            if st.button("📋", key=f"copy_{id(result)}", help="Copy answer"):
+            if st.button("Copy", key=f"copy_{id(result)}", help="Copy answer"):
                 # Streamlit's native clipboard support differs by version.
                 # Keep this lightweight: the browser can still copy from the
                 # rendered Markdown. This button is intentionally non-invasive.
-                st.toast("Select the answer text and copy it.", icon="📋")
+                st.toast("Select the answer text and copy it.")
 
         with cols[1]:
-            if st.button("👍", key=f"up_{id(result)}", help="Helpful"):
-                st.toast("Thanks for the feedback!", icon="👍")
+            if st.button("Helpful", key=f"up_{id(result)}", help="Helpful"):
+                st.toast("Thanks for the feedback!")
 
         with cols[2]:
-            if st.button("👎", key=f"down_{id(result)}", help="Not helpful"):
-                st.toast("Thanks — we'll use that feedback.", icon="👎")
+            if st.button("Not helpful", key=f"down_{id(result)}", help="Not helpful"):
+                st.toast("Thanks — we'll use that feedback.")
 
 
 def render_error(turn: dict) -> None:
@@ -635,8 +655,8 @@ def render_error(turn: dict) -> None:
         <div class="message-row assistant">
             <div class="assistant-card">
                 <div class="assistant-head">
-                    <div class="assistant-avatar">🧠</div>
-                    <span>DocuMind</span>
+                    <div class="assistant-avatar">V</div>
+                    <span>Verity</span>
                 </div>
         """,
         unsafe_allow_html=True,
@@ -661,18 +681,15 @@ def conversation_title() -> str:
     return title[:34] + ("…" if len(title) > 34 else "")
 
 
-# ---------------------------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------------------------
 
 def render_sidebar() -> None:
     with st.sidebar:
         st.markdown(
             """
             <div class="sidebar-brand">
-                <div class="sidebar-logo">🧠</div>
+                <div class="sidebar-logo">V</div>
                 <div>
-                    <div class="sidebar-title">DocuMind</div>
+                    <div class="sidebar-title">Verity</div>
                     <div class="sidebar-subtitle">Enterprise knowledge assistant</div>
                 </div>
             </div>
@@ -681,7 +698,7 @@ def render_sidebar() -> None:
         )
 
         st.markdown('<div class="new-chat">', unsafe_allow_html=True)
-        if st.button("＋  New Chat", use_container_width=True, type="primary"):
+        if st.button("+ New Chat", use_container_width=True, type="primary"):
             new_chat()
             st.session_state.page = "chat"
             st.rerun()
@@ -692,7 +709,7 @@ def render_sidebar() -> None:
         if st.session_state.chat_history:
             st.caption(conversation_title())
 
-            if st.button("🗑️  Clear conversation", use_container_width=True):
+            if st.button("Clear conversation", use_container_width=True):
                 new_chat()
                 st.rerun()
         else:
@@ -704,21 +721,19 @@ def render_sidebar() -> None:
         st.caption("Kubernetes · Company policies · Support topics")
 
         if st.session_state.page == "chat":
-            if st.button("⌂  Home", use_container_width=True):
+            if st.button("Home", use_container_width=True):
                 st.session_state.page = "home"
                 st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# Home
-# ---------------------------------------------------------------------------
+
 
 def page_home() -> None:
     st.markdown(
         """
         <div class="home-hero">
-            <div class="home-logo">🧠</div>
-            <div class="home-title">DocuMind</div>
+            <div class="home-logo">V</div>
+            <div class="home-title">Verity</div>
             <div class="home-subtitle">
                 A grounded enterprise AI assistant that answers questions
                 from your internal knowledge base instead of making things up.
@@ -734,10 +749,9 @@ def page_home() -> None:
         st.markdown(
             """
             <div class="feature-card">
-                <div class="feature-icon">🔎</div>
-                <div class="feature-title">Grounded answers</div>
-                <div class="feature-text">
-                    Answers are generated from retrieved knowledge-base content.
+                <div>
+                    <div class="feature-title">Grounded answers</div>
+                    <div class="feature-text">Sourced from your knowledge base.</div>
                 </div>
             </div>
             """,
@@ -748,11 +762,9 @@ def page_home() -> None:
         st.markdown(
             """
             <div class="feature-card">
-                <div class="feature-icon">💬</div>
-                <div class="feature-title">Conversational</div>
-                <div class="feature-text">
-                    Follow-ups can reuse the conversation without unnecessarily
-                    running retrieval again.
+                <div>
+                    <div class="feature-title">Conversational</div>
+                    <div class="feature-text">Remembers context across follow-ups.</div>
                 </div>
             </div>
             """,
@@ -763,11 +775,9 @@ def page_home() -> None:
         st.markdown(
             """
             <div class="feature-card">
-                <div class="feature-icon">🛡️</div>
-                <div class="feature-title">Guarded</div>
-                <div class="feature-text">
-                    Unsupported or low-confidence questions are refused instead
-                    of being answered with invented facts.
+                <div>
+                    <div class="feature-title">Guarded</div>
+                    <div class="feature-text">Refuses instead of guessing.</div>
                 </div>
             </div>
             """,
@@ -775,22 +785,82 @@ def page_home() -> None:
         )
 
     st.write("")
-    score, source = get_latest_eval_score()
+    eval_data, source = get_latest_eval_report()
 
-    c1, c2, c3 = st.columns([1, 2, 1])
+    c1, c2, c3 = st.columns([0.3, 5, 0.3])
     with c2:
         with st.container(border=True):
-            st.markdown("### 📊 Latest evaluation")
+            if eval_data is not None:
+                overall = eval_data.get("overall", {}) or {}
+                n_samples = eval_data.get("n_samples")
+                refusal_acc = eval_data.get("refusal_accuracy_on_adversarial_set")
+                by_tier = eval_data.get("by_tier", {}) or {}
 
-            if score is not None:
-                st.metric("Faithfulness", f"{score:.2f}")
-                st.caption(source)
+                header_col, badge_col = st.columns([3, 1])
+                with header_col:
+                    st.markdown("### Latest evaluation")
+                    st.caption(
+                        f"{n_samples} questions evaluated · {source}"
+                        if n_samples is not None
+                        else source
+                    )
+                with badge_col:
+                    if refusal_acc is not None:
+                        st.metric(
+                            "Refusal accuracy",
+                            f"{refusal_acc:.0%}",
+                            help=(
+                                "On adversarial / out-of-scope questions "
+                                "(e.g. asking for private data or things "
+                                "outside the knowledge base), the fraction "
+                                "the assistant correctly refused instead of "
+                                "guessing."
+                            ),
+                        )
+
+                st.write("")
+
+                # Average of all four core RAG metrics across the eval set.
+                metric_cols = st.columns(4)
+                for col, (key, info) in zip(metric_cols, EVAL_METRIC_INFO.items()):
+                    value = overall.get(key)
+                    with col:
+                        st.metric(
+                            info["label"],
+                            f"{value:.2f}" if value is not None else "—",
+                            help=info["help"],
+                        )
+
+                st.write("")
+                with st.expander("What do these metrics mean?"):
+                    for key, info in EVAL_METRIC_INFO.items():
+                        st.markdown(f"**{info['label']}** — {info['help']}")
+
+                if by_tier:
+                    with st.expander("Breakdown by question tier"):
+                        def fmt(v):
+                            return f"{v:.2f}" if isinstance(v, (int, float)) else "—"
+
+                        rows = []
+                        for tier_name, tier_scores in by_tier.items():
+                            rows.append(
+                                {
+                                    "Tier": tier_name.capitalize(),
+                                    "n": tier_scores.get("n"),
+                                    "Faithfulness": fmt(tier_scores.get("faithfulness")),
+                                    "Answer Relevance": fmt(tier_scores.get("answer_relevance")),
+                                    "Context Precision": fmt(tier_scores.get("context_precision")),
+                                    "Context Recall": fmt(tier_scores.get("context_recall")),
+                                }
+                            )
+                        st.dataframe(rows, use_container_width=True, hide_index=True)
             else:
+                st.markdown("### Latest evaluation")
                 st.caption("No evaluation report found yet.")
 
             st.write("")
             if st.button(
-                "💬  Start Chat",
+                "Start Chat",
                 type="primary",
                 use_container_width=True,
             ):
@@ -798,18 +868,15 @@ def page_home() -> None:
                 st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# Chat
-# ---------------------------------------------------------------------------
 
 def page_chat() -> None:
     st.markdown(
         """
         <div class="chat-header">
             <div class="chat-brand">
-                <div class="chat-logo">🧠</div>
+                <div class="chat-logo">V</div>
                 <div>
-                    <div class="chat-title">DocuMind</div>
+                    <div class="chat-title">Verity</div>
                     <div class="chat-subtitle">
                         <span class="status-dot"></span>
                         Grounded enterprise assistant
@@ -828,19 +895,19 @@ def page_chat() -> None:
         st.markdown(
             """
             <div class="empty-state">
-                <div class="empty-icon">✦</div>
+                <div class="empty-icon">V</div>
                 <div class="empty-title">How can I help?</div>
                 <div class="empty-subtitle">
                     Ask about Kubernetes, company policies, subscriptions,
                     accounts, support topics, or anything else contained in
-                    the DocuMind knowledge base.
+                    the Verity knowledge base.
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    # Existing conversation.
+    
     for turn in st.session_state.chat_history:
         render_user_message(turn["question"])
 
@@ -850,7 +917,7 @@ def page_chat() -> None:
             render_assistant_result(turn["result"], show_actions=False)
 
     # Composer.
-    question = st.chat_input("Message DocuMind…")
+    question = st.chat_input("Message Verity…")
 
     if not question or not question.strip():
         return
@@ -860,7 +927,7 @@ def page_chat() -> None:
     render_user_message(question)
 
     # Use the NEW router entry point, not answer_question().
-    with st.spinner("DocuMind is thinking…"):
+    with st.spinner("Verity is thinking…"):
         try:
             t0 = time.perf_counter()
 
@@ -904,9 +971,7 @@ def page_chat() -> None:
             render_error(st.session_state.chat_history[-1])
 
 
-# ---------------------------------------------------------------------------
-# Router
-# ---------------------------------------------------------------------------
+
 
 def main() -> None:
     render_sidebar()
