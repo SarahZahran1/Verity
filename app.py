@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import json
@@ -11,13 +9,7 @@ from pathlib import Path
 import streamlit as st
 
 
-try:
-    import config
-    import generation
-
-    BACKEND_IMPORT_ERROR = None
-except Exception as exc:  # pragma: no cover
-    BACKEND_IMPORT_ERROR = exc
+import backend_client
 
 st.set_page_config(
     page_title="Verity",
@@ -436,12 +428,13 @@ def safe_run(spinner_text: str):
 
 
 def backend_ready() -> bool:
-    if BACKEND_IMPORT_ERROR is None:
+    if backend_client.is_backend_ready():
         return True
 
-    st.error("Verity backend could not be loaded.")
-    with st.expander("Technical details"):
-        st.code(str(BACKEND_IMPORT_ERROR))
+    st.error(
+        f"Verity API is not reachable at {backend_client.API_BASE_URL}. "
+        "Make sure it's running (`fastapi dev api.py`)."
+    )
     return False
 
 
@@ -484,23 +477,12 @@ EVAL_METRIC_INFO = {
 
 
 def get_latest_eval_report():
-    """Return (eval_data: dict, filename: str) for the latest evaluation report."""
+    """Return (eval_data: dict, filename: str) for the latest evaluation report,
+    fetched from the API rather than reading data/eval_results/ directly."""
     if not backend_ready():
         return None, None
 
-    eval_dir = Path(config.EVAL_RESULTS_DIR)
-    if not eval_dir.exists():
-        return None, None
-
-    report_files = sorted(eval_dir.glob("ragas_eval_*.json"), reverse=True)
-    if not report_files:
-        return None, None
-
-    try:
-        data = json.loads(report_files[0].read_text(encoding="utf-8"))
-        return data, report_files[0].name
-    except Exception:
-        return None, None
+    return backend_client.get_latest_eval_report()
 
 
 def new_chat() -> None:
@@ -926,14 +908,16 @@ def page_chat() -> None:
 
     render_user_message(question)
 
-    # Use the NEW router entry point, not answer_question().
+    # Calls the FastAPI backend's /chat endpoint (routes chit-chat /
+    # follow-up / off-topic / new-question), instead of calling
+    # generation.handle_message() in-process.
     with st.spinner("Verity is thinking…"):
         try:
             t0 = time.perf_counter()
 
             recent_history = recent_history_for_backend()
 
-            result = generation.handle_message(
+            result = backend_client.chat(
                 question=question,
                 history=recent_history,
                 top_k=5,
