@@ -2,7 +2,9 @@
 
 Verity is a Retrieval-Augmented Generation platform that answers questions strictly from an internal knowledge base — Kubernetes documentation, company policies, and IT support Q&A — instead of relying on the LLM's own knowledge. Every answer is grounded in retrieved passages, with guardrails that refuse rather than guess when a question is out of scope or the retrieved context is weak.
 ## Demo
-[demo.mp4]
+## Demo
+
+https://github.com/SarahZahran1/Verity/raw/main/demo.mp4
 ## Architecture
 
 ```mermaid
